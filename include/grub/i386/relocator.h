@@ -86,6 +86,10 @@ grub_err_t grub_relocator32_boot (struct grub_relocator *rel,
 				  struct grub_relocator32_state state,
 				  int avoid_efi_bootservices);
 
+grub_err_t grub_relocatorSVM_boot (struct grub_relocator *rel,
+				  struct grub_relocator32_state state,
+				  int avoid_efi_bootservices);
+
 grub_err_t grub_relocator64_boot (struct grub_relocator *rel,
 				  struct grub_relocator64_state state,
 				  grub_addr_t min_addr, grub_addr_t max_addr);

@@ -1542,6 +1542,7 @@ module = {
   common = lib/relocator.c;
   x86 = lib/i386/relocator16.S;
   x86 = lib/i386/relocator32.S;
+  x86 = lib/i386/relocatorSVM.S;
   x86 = lib/i386/relocator64.S;
   i386 = lib/i386/relocator_asm.S;
   x86_64 = lib/x86_64/relocator_asm.S;

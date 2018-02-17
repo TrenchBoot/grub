@@ -57,6 +57,18 @@ extern grub_uint32_t grub_relocator32_ebp;
 extern grub_uint32_t grub_relocator32_esi;
 extern grub_uint32_t grub_relocator32_edi;
 
+extern grub_uint8_t grub_relocatorSVM_start;
+extern grub_uint8_t grub_relocatorSVM_end;
+extern grub_uint32_t grub_relocatorSVM_eax;
+extern grub_uint32_t grub_relocatorSVM_ebx;
+extern grub_uint32_t grub_relocatorSVM_ecx;
+extern grub_uint32_t grub_relocatorSVM_edx;
+extern grub_uint32_t grub_relocatorSVM_eip;
+extern grub_uint32_t grub_relocatorSVM_esp;
+extern grub_uint32_t grub_relocatorSVM_ebp;
+extern grub_uint32_t grub_relocatorSVM_esi;
+extern grub_uint32_t grub_relocatorSVM_edi;
+
 extern grub_uint8_t grub_relocator64_start;
 extern grub_uint8_t grub_relocator64_end;
 extern grub_uint64_t grub_relocator64_rax;
@@ -102,6 +114,52 @@ grub_relocator32_boot (struct grub_relocator *rel,
   grub_relocator32_edi = state.edi;
 
   grub_memmove (get_virtual_current_address (ch), &grub_relocator32_start,
+		RELOCATOR_SIZEOF (32));
+
+  err = grub_relocator_prepare_relocs (rel, get_physical_target_address (ch),
+				       &relst, NULL);
+  if (err)
+    return err;
+
+  asm volatile ("cli");
+  ((void (*) (void)) relst) ();
+
+  /* Not reached.  */
+  return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_relocatorSVM_boot (struct grub_relocator *rel,
+		        struct grub_relocator32_state state,
+		        int avoid_efi_bootservices)
+{
+  grub_err_t err;
+  void *relst;
+  grub_relocator_chunk_t ch;
+
+  /* Specific memory range due to Global Descriptor Table for use by payload
+     that we will store in returned chunk.  The address range and preference
+     are based on "THE LINUX/x86 BOOT PROTOCOL" specification.  */
+  err = grub_relocator_alloc_chunk_align (rel, &ch, 0x1000,
+					  0x9a000 - RELOCATOR_SIZEOF (32),
+					  RELOCATOR_SIZEOF (32), 16,
+					  GRUB_RELOCATOR_PREFERENCE_LOW,
+					  avoid_efi_bootservices);
+  if (err)
+    return err;
+
+  /* clear all registers except %eax before skinit */
+  grub_relocatorSVM_eax = state.eax;
+  grub_relocatorSVM_ebx = 0;
+  grub_relocatorSVM_ecx = 0;
+  grub_relocatorSVM_edx = 0;
+  grub_relocatorSVM_eip = 0;
+  grub_relocatorSVM_esp = 0;
+  grub_relocatorSVM_ebp = 0;
+  grub_relocatorSVM_esi = 0;
+  grub_relocatorSVM_edi = 0;
+
+  grub_memmove (get_virtual_current_address (ch), &grub_relocatorSVM_start,
 		RELOCATOR_SIZEOF (32));
 
   err = grub_relocator_prepare_relocs (rel, get_physical_target_address (ch),
