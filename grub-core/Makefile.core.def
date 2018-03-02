@@ -213,6 +213,8 @@ kernel = {
   x86_64_efi = kern/i386/efi/init.c;
   x86_64_efi = bus/pci.c;
 
+  x86 = kern/tpm.c;
+
   xen = kern/i386/tsc.c;
   xen = kern/i386/xen/tsc.c;
   x86_64_xen = kern/x86_64/xen/hypercall.S;
