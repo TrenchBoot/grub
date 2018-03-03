@@ -1699,6 +1699,12 @@ module = {
 };
 
 module = {
+  name = slaunch;
+  x86 = loader/i386/slaunch.c;
+  enable = x86;
+};
+
+module = {
   name = fdt;
   arm64 = loader/efi/fdt.c;
   common = lib/fdt.c;
