@@ -100,6 +100,7 @@ KERNEL_HEADER_FILES += $(top_builddir)/include/grub/machine/pxe.h
 KERNEL_HEADER_FILES += $(top_builddir)/include/grub/machine/int.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i386/tsc.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/tis.h
+KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/slaunch.h
 endif
 
 if COND_i386_xen_pvh
@@ -122,6 +123,7 @@ KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i386/tsc.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/acpi.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/pci.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i386/pmtimer.h
+KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/slaunch.h
 endif
 
 if COND_i386_coreboot
@@ -183,6 +185,7 @@ KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i386/tsc.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/pci.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/acpi.h
 KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i386/pmtimer.h
+KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/slaunch.h
 endif
 
 if COND_ia64_efi
