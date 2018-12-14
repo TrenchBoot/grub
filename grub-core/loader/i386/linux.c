@@ -34,6 +34,7 @@
 #include <grub/i386/relocator.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
+#include <grub/slaunch.h>
 #include <grub/linux.h>
 #include <grub/machine/kernel.h>
 
@@ -80,6 +81,8 @@ static grub_efi_uintn_t efi_mmap_size;
 #else
 static const grub_size_t efi_mmap_size = 0;
 #endif
+static grub_err_t (*grub_slaunch_func) (struct grub_slaunch_params*) = NULL;
+static struct grub_slaunch_params slparams;
 
 /* FIXME */
 #if 0
@@ -95,6 +98,12 @@ static struct idt_descriptor idt_desc =
     0
   };
 #endif
+
+void
+grub_linux_slaunch_set (grub_err_t (*sfunc) (struct grub_slaunch_params*))
+{
+  grub_slaunch_func = sfunc;
+}
 
 static inline grub_size_t
 page_align (grub_size_t size)
@@ -615,6 +624,15 @@ grub_linux_boot (void)
       }
   }
 #endif
+
+  /* If a secondary loader was set for secure launch, call it here.  */
+  if (grub_slaunch_func)
+    {
+      slparams.params = ctx.params;
+      slparams.real_mode_target = ctx.real_mode_target;
+      slparams.prot_mode_target = prot_mode_target;
+      return grub_slaunch_func (&slparams);
+    }
 
   /* FIXME.  */
   /*  asm volatile ("lidt %0" : : "m" (idt_desc)); */

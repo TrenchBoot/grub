@@ -42,6 +42,16 @@ struct grub_slaunch_params
   grub_addr_t prot_mode_target;
 };
 
+struct grub_slaunch_module
+{
+  struct grub_slaunch_module *next;
+  grub_uint8_t *addr;
+  grub_addr_t target;
+  grub_size_t size;
+};
+
+struct grub_slaunch_module *grub_slaunch_get_modules (void);
+
 grub_err_t grub_slaunch_boot_txt (struct grub_slaunch_params *slparams);
 grub_err_t grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams);
 
