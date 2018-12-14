@@ -210,6 +210,8 @@ kernel = {
 
   x86 = kern/i386/tsc.c;
   x86 = kern/i386/tsc_pit.c;
+  x86 = kern/tpm.c;
+  x86 = kern/tis.c;
   i386_efi = kern/i386/efi/tsc.c;
   x86_64_efi = kern/i386/efi/tsc.c;
   i386_efi = kern/i386/tsc_pmtimer.c;
