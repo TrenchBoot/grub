@@ -24,6 +24,11 @@
 #include <grub/dl.h>
 #include <grub/efi/api.h>
 
+#define GRUB_EFI_GRUB_VARIABLE_GUID \
+  { 0x91376aff, 0xcba6, 0x42be, \
+    { 0x94, 0x9d, 0x06, 0xfd, 0xe8, 0x11, 0x28, 0xe8 } \
+  }
+
 /* Functions.  */
 void *EXPORT_FUNC(grub_efi_locate_protocol) (grub_efi_guid_t *protocol,
 					     void *registration);
