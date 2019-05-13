@@ -30,8 +30,18 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 {
   slparams = slparams;
 
-  grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams.real_mode_target);
-  grub_printf("%s:%d: prot_mode_target: 0x%lx\r\n", __FUNCTION__, __LINE__, slparams.prot_mode_target);
+  grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->real_mode_target);
+  grub_printf("%s:%d: prot_mode_target: 0x%lx\r\n", __FUNCTION__, __LINE__, slparams->prot_mode_target);
+  grub_dprintf("linux", "Invoke SKINIT\r\n");
+
+  __asm__ ("movl %0, %%eax;"
+	   "skinit;"
+	   : /* no output */
+	   : "r" ( 0x2e14000 )
+	   : /* no clobbered reg */
+      );
+
+  grub_dprintf("linux", "SKINIT exit\r\n");
 
   return GRUB_ERR_NONE;
 }
