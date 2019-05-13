@@ -30,5 +30,8 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 {
   slparams = slparams;
 
+  grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams.real_mode_target);
+  grub_printf("%s:%d: prot_mode_target: 0x%lx\r\n", __FUNCTION__, __LINE__, slparams.prot_mode_target);
+
   return GRUB_ERR_NONE;
 }
