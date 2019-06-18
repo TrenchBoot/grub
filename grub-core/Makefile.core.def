@@ -1798,6 +1798,7 @@ module = {
   x86 = loader/i386/slaunch.c;
   x86 = loader/i386/slaunch_txt.c;
   x86 = loader/i386/slaunch_skinit.c;
+  x86 = kern/tis.c;
   enable = x86;
 };
 

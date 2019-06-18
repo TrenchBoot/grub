@@ -631,6 +631,7 @@ grub_linux_boot (void)
       slparams.params = ctx.params;
       slparams.real_mode_target = ctx.real_mode_target;
       slparams.prot_mode_target = prot_mode_target;
+      slparams.relocator = relocator;
       return grub_slaunch_func (&slparams);
     }
 

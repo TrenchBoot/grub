@@ -25,23 +25,44 @@
 #include <grub/dl.h>
 #include <grub/slaunch.h>
 
+static void skinit(void) {
+  __asm__("push %eax\n\
+  mov $0x3f8, %dx\n\
+  mov $'X', %ax\n\
+  outb %al, %dx\n\
+  pop %eax\n\
+  skinit\n\
+  mov $0x3f8, %dx\n\
+  mov $'x', %ax\n\
+  outb %al, %dx\n\
+  .byte 0xeb, 0xfe");
+}
+
 grub_err_t
 grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 {
-  slparams = slparams;
-
-  grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->real_mode_target);
-  grub_printf("%s:%d: prot_mode_target: 0x%lx\r\n", __FUNCTION__, __LINE__, slparams->prot_mode_target);
-  grub_dprintf("linux", "Invoke SKINIT\r\n");
-
   if (grub_slaunch_get_modules()) {
-    __asm__ ("skinit;"
-	     : /* no output */
-	     : "a" ( 0x4000000 )
-	     : /* no clobbered reg */
-	);
+    grub_uint32_t *slb = (grub_uint32_t *)grub_slaunch_get_modules()->target;
+    grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
+    struct grub_relocator32_state state;
 
-    grub_dprintf("linux", "SKINIT exit\r\n");
+    grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->real_mode_target);
+    grub_printf("%s:%d: prot_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->prot_mode_target);
+    grub_printf("%s:%d: params: %p\r\n", __FUNCTION__, __LINE__, slparams->params);
+
+    // TODO: move outside of measured part of SLB
+    // TODO2: save kernel size for measuring in LZ
+    slb[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->params;
+    *apic = 0x000c0500;               // INIT, all excluding self
+
+    grub_tis_init();
+    grub_tis_request_locality(0xff);  // relinquish all localities
+
+    state.eax = slb;
+    state.esp = slparams->real_mode_target;
+    state.eip = skinit;
+    grub_dprintf("linux", "Invoke SKINIT\r\n");
+    return grub_relocator32_boot (slparams->relocator, state, 0);
   } else {
     grub_dprintf("linux", "Secure Loader module not loaded, run slaunch_module\r\n");
   }
