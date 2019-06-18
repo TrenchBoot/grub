@@ -23,8 +23,11 @@
 
 #include <grub/types.h>
 #include <grub/i386/linux.h>
+#include <grub/i386/relocator.h>
+#include <grub/tis.h>
 
 #define GRUB_SL_BOOTPARAMS_OFFSET	0x12c
+#define GRUB_SL_ZEROPAGE_OFFSET		0x18
 
 struct grub_slaunch_info
 {
@@ -40,6 +43,7 @@ struct grub_slaunch_params
   struct linux_kernel_params *params;
   grub_addr_t real_mode_target;
   grub_addr_t prot_mode_target;
+  struct grub_relocator *relocator;
 };
 
 struct grub_slaunch_module
