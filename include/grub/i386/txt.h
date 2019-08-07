@@ -235,7 +235,7 @@ union grub_txt_didvid
   };
 } GRUB_PACKED;
 
-#define GRUB_TXT_VERSION_DEBUG_FUSED	(1<<31)
+#define GRUB_TXT_VERSION_PROD_FUSED	(1<<31)
 
 /* Appendix C Intel TXT Heap Memory */
 
@@ -467,16 +467,28 @@ struct grub_txt_heap_event_log_ptr_elt2_1
 
 /* TXT register and heap access */
 
+static inline grub_uint8_t
+grub_txt_reg_pub_readb (grub_uint32_t reg)
+{
+  return grub_readb (GRUB_TXT_CFG_REGS_PUB + reg);
+}
+
+static inline grub_uint32_t
+grub_txt_reg_pub_readl (grub_uint32_t reg)
+{
+  return grub_readl (GRUB_TXT_CFG_REGS_PUB + reg);
+}
+
 static inline grub_uint64_t
 grub_txt_reg_pub_readq (grub_uint32_t reg)
 {
-  return grub_readq ((void *) (GRUB_TXT_CFG_REGS_PUB + reg));
+  return grub_readq (GRUB_TXT_CFG_REGS_PUB + reg);
 }
 
 static inline grub_uint8_t *
 grub_txt_get_heap (void)
 {
-  return (grub_uint8_t *)(grub_addr_t) grub_txt_reg_pub_readq (GRUB_TXT_HEAP_BASE);
+  return (grub_uint8_t *)(grub_addr_t) grub_txt_reg_pub_readl (GRUB_TXT_HEAP_BASE);
 }
 
 static inline grub_uint64_t
