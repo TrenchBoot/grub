@@ -31,9 +31,21 @@
 
 #define GRUB_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_PAGE_SIZE)
 
+/*
+ * Special value for slr_table_base of struct grub_slaunch_params that indicates
+ * that the table should be stored near OS2MLE data (right after it).
+ *
+ * In this case:
+ *  1. Platform-specific code (e.g., TXT-code) is responsible for setting
+ *     slr_table_base to its final value
+ *  2. SLRT should be copied from slr_table_mem to slr_table_base after invoking
+ *     grub_slaunch_finish_slr_table () by the code which used this special
+ *     value.
+ */
+#define GRUB_SLAUNCH_STORE_IN_OS2MLE    ((grub_uint64_t) 0xFFFFFFFFFFFFFFFF)
+
 #ifndef ASM_FILE
 
-#include <grub/i386/linux.h>
 #include <grub/types.h>
 
 struct grub_slaunch_params
