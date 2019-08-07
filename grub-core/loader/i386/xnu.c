@@ -28,6 +28,7 @@
 #include <grub/i386/cpuid.h>
 #include <grub/efi/api.h>
 #include <grub/i386/pit.h>
+#include <grub/i386/slaunch.h>
 #include <grub/misc.h>
 #include <grub/charset.h>
 #include <grub/term.h>
@@ -802,6 +803,7 @@ grub_xnu_boot_resume (void)
 {
   struct grub_relocator32_state state = {0};
 
+  state.edi = SLP_NONE;
   state.esp = grub_xnu_stack;
   state.ebp = grub_xnu_stack;
   state.eip = grub_xnu_entry_point;
@@ -1129,6 +1131,7 @@ grub_xnu_boot (void)
   grub_autoefi_set_virtual_address_map (memory_map_size, descriptor_size,
 					descriptor_version, memory_map);
 
+  state.edi = SLP_NONE;
   state.eip = grub_xnu_entry_point;
   state.eax = grub_xnu_arg1;
   state.esp = grub_xnu_stack;
