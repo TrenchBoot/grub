@@ -33,7 +33,6 @@
 
 #ifndef ASM_FILE
 
-#include <grub/i386/linux.h>
 #include <grub/types.h>
 
 struct grub_slaunch_params
