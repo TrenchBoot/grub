@@ -34,10 +34,13 @@
 #include <grub/i386/relocator.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
 #include <grub/linux.h>
 #include <grub/machine/kernel.h>
 #include <grub/safemath.h>
 #include <grub/efi/sb.h>
+#include <grub/slr_table.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -64,18 +67,36 @@ GRUB_MOD_LICENSE ("GPLv3+");
 #define ACCEPTS_PURE_TEXT 1
 #endif
 
+/* See kernel_info in Documentation/arch/x86/boot.rst in the kernel tree */
+#define KERNEL_INFO_HEADER		"LToP"
+#define KERNEL_INFO_MIN_SIZE_TOTAL	12
+
+struct linux_params_efi_info
+{
+  grub_uint32_t efi_signature;
+  grub_uint32_t efi_system_table;
+  grub_uint32_t efi_mem_desc_size;
+  grub_uint32_t efi_mem_desc_version;
+  grub_uint32_t efi_mmap;
+  grub_uint32_t efi_mmap_size;
+  grub_uint32_t efi_system_table_hi;
+  grub_uint32_t efi_mmap_hi;
+};
+
 static grub_dl_t my_mod;
 
 static grub_size_t linux_mem_size;
 static int loaded;
 static void *prot_mode_mem;
 static grub_addr_t prot_mode_target;
+static grub_size_t prot_file_size;
 static void *initrd_mem;
 static grub_addr_t initrd_mem_target;
 static grub_size_t prot_init_space;
 static struct grub_relocator *relocator = NULL;
 static void *efi_mmap_buf;
 static grub_size_t maximal_cmdline_size;
+static struct linux_kernel_info *linux_info;
 static struct linux_kernel_params linux_params;
 static char *linux_cmdline;
 #ifdef GRUB_MACHINE_EFI
@@ -98,6 +119,8 @@ static struct idt_descriptor idt_desc =
     0
   };
 #endif
+
+#define OFFSET_OF(x, y) ((grub_size_t) ((grub_uint8_t *) (&(y)->x) - (grub_uint8_t *) (y)))
 
 static inline grub_size_t
 page_align (grub_size_t size)
@@ -151,11 +174,38 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 		grub_uint64_t preferred_address)
 {
   grub_err_t err;
+  grub_size_t total_size;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
   if (prot_size == 0)
     prot_size = 1;
 
-  prot_size = page_align (prot_size);
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      if (prot_size > GRUB_TXT_MLE_MAX_SIZE)
+        {
+          err = GRUB_ERR_OUT_OF_RANGE;
+          goto fail;
+        }
+
+      /* Check performed above makes sure that this doesn't overflow. */
+      prot_size = ALIGN_UP (prot_size, GRUB_TXT_PMR_ALIGN);
+
+      slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (prot_size);
+      slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+      /* Do not go below GRUB_TXT_PMR_ALIGN. */
+      preferred_address = (preferred_address > slparams->mle_ptab_size) ?
+                            (preferred_address - slparams->mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
+      preferred_address = ALIGN_UP (preferred_address, GRUB_TXT_PMR_ALIGN);
+    }
+  else
+    {
+      prot_size = page_align (prot_size);
+      slparams->mle_ptab_size = 0;
+    }
+
+  /* Protected mode code immediately follows MLE page table. */
+  total_size = slparams->mle_ptab_size + prot_size;
 
   /* Initialize the memory pointers with NULL for convenience.  */
   free_pages ();
@@ -177,15 +227,15 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 	err = grub_relocator_alloc_chunk_align (relocator, &ch,
 						preferred_address,
 						preferred_address,
-						prot_size, 1,
+						total_size, 1,
 						GRUB_RELOCATOR_PREFERENCE_LOW,
 						1);
 	for (; err && *align + 1 > min_align; (*align)--)
 	  {
 	    grub_errno = GRUB_ERR_NONE;
 	    err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
-						    UP_TO_TOP32 (prot_size),
-						    prot_size, 1 << *align,
+						    UP_TO_TOP32 (total_size),
+						    total_size, 1 << *align,
 						    GRUB_RELOCATOR_PREFERENCE_LOW,
 						    1);
 	  }
@@ -195,11 +245,80 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
     else
       err = grub_relocator_alloc_chunk_addr (relocator, &ch,
 					     preferred_address,
-					     prot_size);
+					     total_size);
     if (err)
       goto fail;
     prot_mode_mem = get_virtual_current_address (ch);
     prot_mode_target = get_physical_target_address (ch);
+
+    if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      {
+        /* Zero out memory to get stable MLE measurements. */
+        grub_memset (prot_mode_mem, 0, total_size);
+
+        slparams->mle_ptab_mem = prot_mode_mem;
+        slparams->mle_ptab_target = prot_mode_target;
+
+        prot_mode_mem = (char *)prot_mode_mem + slparams->mle_ptab_size;
+        prot_mode_target += slparams->mle_ptab_size;
+
+        slparams->mle_start = prot_mode_target;
+        slparams->mle_size = prot_size;
+        slparams->mle_mem = prot_mode_mem;
+
+        grub_dprintf ("linux", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
+                      slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
+                      (unsigned) slparams->mle_ptab_size);
+
+        err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                                0xffffffff - GRUB_PAGE_SIZE,
+                                                GRUB_PAGE_SIZE, GRUB_PAGE_SIZE,
+                                                GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+        if (err)
+            goto fail;
+
+        slparams->slr_table_base = get_physical_target_address (ch);
+        slparams->slr_table_size = GRUB_PAGE_SIZE;
+        slparams->slr_table_mem = get_virtual_current_address (ch);
+
+        grub_memset (slparams->slr_table_mem, 0, slparams->slr_table_size);
+
+        grub_dprintf ("linux", "slr_table_base = %lx, slr_table_size = %x\n",
+                      (unsigned long) slparams->slr_table_base,
+                      (unsigned) slparams->slr_table_size);
+
+        err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                                0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
+                                                GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+                                                GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+        if (err)
+            goto fail;
+
+        slparams->tpm_evt_log_base = get_physical_target_address (ch);
+        slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+        grub_txt_init_tpm_event_log (get_virtual_current_address (ch),
+                                     slparams->tpm_evt_log_size);
+
+        grub_dprintf ("linux", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
+                      (unsigned long) slparams->tpm_evt_log_base,
+                      (unsigned) slparams->tpm_evt_log_size);
+
+        if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                              0xffffffff - GRUB_MLE_AP_WAKE_BLOCK_SIZE,
+                                              GRUB_MLE_AP_WAKE_BLOCK_SIZE, GRUB_PAGE_SIZE,
+                                              GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+          goto fail;
+
+        slparams->ap_wake_block = get_physical_target_address (ch);
+        slparams->ap_wake_block_size = GRUB_MLE_AP_WAKE_BLOCK_SIZE;
+
+        grub_memset (get_virtual_current_address (ch), 0, slparams->ap_wake_block_size);
+
+        grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
+                      (unsigned long) slparams->ap_wake_block,
+                      (unsigned long) slparams->ap_wake_block_size);
+      }
   }
 
   grub_dprintf ("linux", "prot_mode_mem = %p, prot_mode_target = %lx, prot_size = %x\n",
@@ -399,6 +518,63 @@ grub_linux_boot_mmap_fill (grub_uint64_t addr, grub_uint64_t size,
   return 0;
 }
 
+static void
+grub_linux_setup_slr_table (struct grub_slaunch_params *slparams)
+{
+  struct linux_kernel_params *boot_params = (void *) (grub_addr_t) slparams->boot_params_addr;
+  struct linux_params_efi_info *efi_info;
+
+  /* A bit of work to extract the v2.08 EFI info from the linux params */
+  efi_info = (void *)((grub_uint8_t *)&boot_params->v0208 + 2*sizeof(grub_uint32_t));
+
+  grub_slaunch_add_slrt_policy_entry (GRUB_SLAUNCH_DATA_PCR,
+                                      GRUB_SLR_ET_BOOT_PARAMS,
+                                      /*flags=*/0,
+                                      (grub_addr_t) boot_params,
+                                      GRUB_PAGE_SIZE,
+                                      "Measured boot parameters");
+
+  if (boot_params->setup_data)
+      grub_slaunch_add_slrt_policy_entry (GRUB_SLAUNCH_DATA_PCR,
+                                          GRUB_SLR_ET_SETUP_DATA,
+                                          GRUB_SLR_POLICY_IMPLICIT_SIZE,
+                                          boot_params->setup_data,
+                                          /*size=*/0,
+                                          "Measured Kernel setup_data");
+
+  /* The cmdline ptr can have hi bits but GRUB puts it always < 4G */
+  grub_slaunch_add_slrt_policy_entry (GRUB_SLAUNCH_DATA_PCR,
+                                      GRUB_SLR_ET_CMDLINE,
+                                      /*flags=*/0,
+                                      boot_params->cmd_line_ptr,
+                                      boot_params->cmdline_size,
+                                      "Measured Kernel command line");
+
+  if (!grub_memcmp(&efi_info->efi_signature, "EL64", sizeof(grub_uint32_t)))
+    {
+      grub_uint64_t mmap_addr =
+        ((grub_uint64_t) efi_info->efi_mmap_hi << 32) | efi_info->efi_mmap;
+      grub_slaunch_add_slrt_policy_entry (GRUB_SLAUNCH_DATA_PCR,
+                                          GRUB_SLR_ET_UEFI_MEMMAP,
+                                          /*flags=*/0,
+                                          mmap_addr,
+                                          efi_info->efi_mmap_size,
+                                          "Measured EFI memory map");
+    }
+
+  if (boot_params->ramdisk_image)
+      /*
+       * The initrd image and size can have hi bits but in GRUB it is always
+       * < 4G, see GRUB_LINUX_INITRD_MAX_ADDRESS in grub_cmd_initrd().
+       */
+      grub_slaunch_add_slrt_policy_entry (GRUB_SLAUNCH_CODE_PCR,
+                                          GRUB_SLR_ET_RAMDISK,
+                                          /*flags=*/0,
+                                          boot_params->ramdisk_image,
+                                          boot_params->ramdisk_size,
+                                          "Measured Kernel initrd");
+}
+
 static grub_err_t
 grub_linux_boot (void)
 {
@@ -412,6 +588,7 @@ grub_linux_boot (void)
   };
   grub_size_t mmap_size;
   grub_size_t cl_offset;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
 #ifdef GRUB_MACHINE_IEEE1275
   {
@@ -588,6 +765,8 @@ grub_linux_boot (void)
 
     ctx.params->secure_boot = grub_efi_get_secureboot ();
 
+    grub_dprintf ("linux", "EFI exit boot services\n");
+
     err = grub_efi_finish_boot_services (&efi_mmap_size, efi_mmap_buf, NULL,
 					 &efi_desc_size, &efi_desc_version);
     if (err)
@@ -637,12 +816,38 @@ grub_linux_boot (void)
     }
 #endif
 
-  /* FIXME.  */
-  /*  asm volatile ("lidt %0" : : "m" (idt_desc)); */
-  state.ebp = state.edi = state.ebx = 0;
-  state.esi = ctx.real_mode_target;
-  state.esp = ctx.real_mode_target;
-  state.eip = ctx.params->code32_start;
+  state.edi = grub_slaunch_platform_type ();
+
+  if (state.edi == SLP_INTEL_TXT)
+    {
+      slparams->boot_params_addr = ctx.real_mode_target;
+
+      err = grub_txt_boot_prepare (slparams);
+
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "TXT boot preparation failed");
+
+      grub_slaunch_add_slrt_policy_entries ();
+      grub_txt_add_slrt_policy_entries ();
+      grub_linux_setup_slr_table (slparams);
+      grub_slaunch_finish_slr_table ();
+
+      /* Configure relocator GETSEC[SENTER] call. */
+      state.eax = GRUB_SMX_LEAF_SENTER;
+      state.ebx = slparams->dce_base;
+      state.ecx = slparams->dce_size;
+      state.edx = 0;
+    }
+  else
+    {
+      /* FIXME.  */
+      /*  asm volatile ("lidt %0" : : "m" (idt_desc)); */
+      state.ebp = state.edi = state.ebx = 0;
+      state.esi = ctx.real_mode_target;
+      state.esp = ctx.real_mode_target;
+      state.eip = ctx.params->code32_start;
+    }
+
   return grub_relocator32_boot (relocator, state, 0);
 }
 
@@ -664,13 +869,14 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   struct linux_i386_kernel_header lh;
   grub_uint8_t *linux_params_ptr;
   grub_uint8_t setup_sects;
-  grub_size_t real_size, prot_size, prot_file_size, kernel_offset;
+  grub_size_t real_size, prot_size, kernel_offset;
   grub_ssize_t len;
   int i;
   grub_size_t align, min_align;
   int relocatable;
   grub_uint64_t preferred_address = GRUB_LINUX_BZIMAGE_ADDR;
   grub_uint8_t *kernel = NULL;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
   grub_dl_ref (my_mod);
 
@@ -786,12 +992,22 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
       prot_init_space = page_align (prot_size) * 3;
     }
 
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      /* PMRs require GRUB_TXT_PMR_ALIGN_SHIFT aligments. */
+      min_align = grub_max (min_align, GRUB_TXT_PMR_ALIGN_SHIFT);
+      align = grub_max (align, GRUB_TXT_PMR_ALIGN_SHIFT);
+    }
+
   if (allocate_pages (prot_size, &align,
 		      min_align, relocatable,
 		      preferred_address))
     goto fail;
 
   grub_memset (&linux_params, 0, sizeof (linux_params));
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    grub_txt_setup_mle_ptab (slparams);
 
   /*
    * The Linux 32-bit boot protocol defines the setup header end
@@ -821,6 +1037,80 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 	       &linux_params, sizeof (lh) + len);
   grub_update_mem_attrs ((grub_addr_t)&linux_params, sizeof (lh) + len,
 			 GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_W, GRUB_MEM_ATTR_X);
+
+  /* Read the kernel_info struct. */
+  if (grub_le_to_cpu16 (lh.version) >= 0x020f)
+    {
+      if (grub_file_seek (file, (grub_off_t) grub_le_to_cpu32 (lh.kernel_info_offset) +
+                          real_size + GRUB_DISK_SECTOR_SIZE) == ((grub_off_t) -1))
+        goto fail;
+
+      linux_info = grub_malloc (KERNEL_INFO_MIN_SIZE_TOTAL);
+
+      if (!linux_info)
+        {
+          grub_error (GRUB_ERR_OUT_OF_MEMORY, N_("cannot allocate memory for kernel_info"));
+          goto fail;
+        }
+
+      /* Load minimal kernel_info struct. */
+      if (grub_file_read (file, linux_info,
+                          KERNEL_INFO_MIN_SIZE_TOTAL) != KERNEL_INFO_MIN_SIZE_TOTAL)
+        {
+          if (!grub_errno)
+            grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), argv[0]);
+          goto fail;
+        }
+
+      if (grub_memcmp (&linux_info->header, KERNEL_INFO_HEADER, sizeof (linux_info->header)))
+        {
+          grub_error (GRUB_ERR_BAD_OS, N_("incorrect kernel_info header"));
+          goto fail;
+        }
+
+      linux_info->size_total = grub_le_to_cpu32 (linux_info->size_total);
+      if (linux_info->size_total < KERNEL_INFO_MIN_SIZE_TOTAL)
+        {
+          grub_error (GRUB_ERR_BAD_OS, N_("incorrect kernel_info size"));
+          goto fail;
+        }
+
+      linux_info = grub_realloc (linux_info, linux_info->size_total);
+
+      if (!linux_info)
+        {
+          grub_error (GRUB_ERR_OUT_OF_MEMORY, N_("cannot reallocate memory for kernel_info"));
+          goto fail;
+        }
+
+      /* Load the rest of kernel_info struct. */
+      if (grub_file_read (file, &linux_info->setup_type_max,
+                          linux_info->size_total - KERNEL_INFO_MIN_SIZE_TOTAL) !=
+                                (grub_ssize_t)(linux_info->size_total - KERNEL_INFO_MIN_SIZE_TOTAL))
+        {
+          if (!grub_errno)
+            grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), argv[0]);
+          goto fail;
+        }
+
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        {
+          if (OFFSET_OF (mle_header_offset, linux_info) >=
+              grub_le_to_cpu32 (linux_info->size))
+            {
+              if (!grub_errno)
+                grub_error (GRUB_ERR_BAD_OS, N_("not slaunch kernel: lack of mle_header_offset"));
+              goto fail;
+            }
+
+          slparams->mle_header_offset = grub_le_to_cpu32 (linux_info->mle_header_offset);
+        }
+    }
+  else if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      grub_error (GRUB_ERR_BAD_OS, N_("not slaunch kernel: boot protocol too old"));
+      goto fail;
+    }
 
   linux_params.code32_start = prot_mode_target + lh.code32_start - GRUB_LINUX_BZIMAGE_ADDR;
   linux_params.kernel_alignment = (1 << align);
