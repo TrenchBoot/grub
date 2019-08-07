@@ -2,6 +2,9 @@
  *  GRUB  --  GRand Unified Bootloader
  *  Copyright (C) 2019  Free Software Foundation, Inc.
  *
+ *  Some definitions in this header are extracted from the Trusted Computing
+ *  Group's "TPM Main Specification", Parts 1-3.
+ *
  *  GRUB is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
@@ -18,6 +21,62 @@
 
 #ifndef GRUB_I386_MSR_H
 #define GRUB_I386_MSR_H 1
+
+/* General */
+#define GRUB_MSR_X86_PLATFORM_ID	0x00000017
+
+#define GRUB_MSR_X86_APICBASE		0x0000001b
+#define GRUB_MSR_X86_APICBASE_BSP	(1<<8)
+#define GRUB_MSR_X86_APICBASE_ENABLE	(1<<11)
+#define GRUB_MSR_X86_APICBASE_BASE	(0xfffff<<12)
+
+#define GRUB_MSR_X86_FEATURE_CONTROL	0x0000003a
+#define GRUB_MSR_X86_ENABLE_VMX_IN_SMX	(1<<1)
+#define GRUB_MSR_X86_SENTER_FUNCTIONS	(0x7f<<8)
+#define GRUB_MSR_X86_SENTER_ENABLE	(1<<15)
+
+#define GRUB_MSR_X86_MTRRCAP		0x000000fe
+#define GRUB_MSR_X86_VCNT_MASK		0xff
+
+#define GRUB_MSR_X86_MCG_CAP		0x00000179
+#define GRUB_MSR_MCG_BANKCNT_MASK	0xff      /* Number of banks  */
+#define GRUB_MSR_X86_MCG_STATUS		0x0000017a
+#define GRUB_MSR_MCG_STATUS_MCIP	(1ULL<<2) /* MC in progress  */
+
+#define GRUB_MSR_X86_MISC_ENABLE	0x000001a0
+#define GRUB_MSR_X86_ENABLE_MONITOR_FSM	(1<<18)
+
+#define GRUB_MSR_X86_MTRR_PHYSBASE0	0x00000200
+#define GRUB_MSR_X86_MTRR_PHYSMASK0	0x00000201
+#define GRUB_MSR_X86_BASE_DEF_TYPE_MASK	0xff
+#define GRUB_MSR_X86_MASK_VALID		(1<<11)
+
+#define GRUB_MSR_X86_MTRR_DEF_TYPE	0x000002ff
+#define GRUB_MSR_X86_DEF_TYPE_MASK	0xff
+#define GRUB_MSR_X86_MTRR_ENABLE_FIXED	(1<<10)
+#define GRUB_MSR_X86_MTRR_ENABLE	(1<<11)
+
+#define GRUB_MSR_X86_MC0_STATUS		0x00000401
+
+#define GRUB_MSR_X86_EFER		0xc0000080 /* Extended features  */
+#define GRUB_MSR_EFER_LME		(1<<8)     /* Enable Long Mode/IA-32e  */
+#define GRUB_MSR_EFER_LMA		(1<<10)    /* Long Mode/IA-32e Actuve  */
+#define GRUB_MSR_EFER_SVME		(1<<12)    /* Enable SVM (AMD-V)  */
+
+/* AMD Specific */
+#define GRUB_MSR_AMD64_PATCH_LEVEL	0x0000008b
+#define GRUB_MSR_AMD64_PATCH_CLEAR	0xc0010021 /* AMD-specific microcode patch clear  */
+#define GRUB_MSR_AMD64_VM_CR		0xc0010114
+#define GRUB_MSR_SVM_VM_CR_SVM_DISABLE	4
+
+/* MTRR Specific */
+#define GRUB_MTRR_MEMORY_TYPE_UC	0
+#define GRUB_MTRR_MEMORY_TYPE_WC	1
+#define GRUB_MTRR_MEMORY_TYPE_WT	4
+#define GRUB_MTRR_MEMORY_TYPE_WP	5
+#define GRUB_MTRR_MEMORY_TYPE_WB	6
+
+#ifndef ASM_FILE
 
 #include <grub/err.h>
 #include <grub/i386/cpuid.h>
@@ -70,5 +129,7 @@ grub_wrmsr (grub_uint32_t msr_id, grub_uint64_t msr_value)
 
   asm volatile ("wrmsr" : : "c" (msr_id), "a" (low), "d" (high));
 }
+
+#endif /* ASM_FILE */
 
 #endif /* GRUB_I386_MSR_H */
