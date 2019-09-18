@@ -145,10 +145,10 @@ struct grub_tpm_resp_buf
 };
 
 /* TPM Interface Specification functions */
-grub_uint8_t EXPORT_FUNC(grub_tis_request_locality) (grub_uint8_t l);
-grub_uint8_t EXPORT_FUNC(grub_tis_init) (void);
-grub_size_t EXPORT_FUNC(grub_tis_send) (struct grub_tpm_cmd_buf *buf);
-grub_size_t EXPORT_FUNC(grub_tis_recv) (struct grub_tpm_resp_buf *buf);
+grub_uint8_t grub_tis_request_locality (grub_uint8_t l);
+grub_uint8_t grub_tis_init (void);
+grub_size_t grub_tis_send (struct grub_tpm_cmd_buf *buf);
+grub_size_t grub_tis_recv (struct grub_tpm_resp_buf *buf);
 
 /* TPM Commands */
 grub_uint8_t EXPORT_FUNC(grub_tpm_pcr_extend) (struct grub_tpm_digest *d);
