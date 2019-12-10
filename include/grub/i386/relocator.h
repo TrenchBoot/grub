@@ -90,6 +90,10 @@ grub_err_t grub_relocator64_boot (struct grub_relocator *rel,
 				  struct grub_relocator64_state state,
 				  grub_addr_t min_addr, grub_addr_t max_addr);
 
+grub_err_t grub_relocator_skinit_boot (struct grub_relocator *rel,
+				  grub_uint32_t *slb,
+				  int avoid_efi_bootservices);
+
 #ifdef GRUB_MACHINE_EFI
 #ifdef __x86_64__
 grub_err_t grub_relocator64_efi_boot (struct grub_relocator *rel,
