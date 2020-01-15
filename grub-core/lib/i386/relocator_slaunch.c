@@ -31,14 +31,14 @@
 
 extern grub_uint8_t grub_relocator_skinit_start;
 extern grub_uint8_t grub_relocator_skinit_end;
-extern grub_uint32_t *grub_relocator_skinit_slb;
+extern grub_addr_t grub_relocator_skinit_slb;
 
 
 #define RELOCATOR_SIZEOF(x)	(&grub_relocator##x##_end - &grub_relocator##x##_start)
 
 grub_err_t
 grub_relocator_skinit_boot (struct grub_relocator *rel,
-		       grub_uint32_t *slb,
+		       grub_addr_t slb,
 		       int avoid_efi_bootservices)
 {
   grub_err_t err;
