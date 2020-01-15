@@ -27,7 +27,7 @@
 #include <grub/tis.h>
 
 #define GRUB_SL_BOOTPARAMS_OFFSET	0x12c
-#define GRUB_SL_ZEROPAGE_OFFSET		0x18
+#define GRUB_SL_ZEROPAGE_OFFSET		0x14
 
 struct grub_slaunch_info
 {
