@@ -43,7 +43,7 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
     grub_printf("%s:%d: params: %p\r\n", __FUNCTION__, __LINE__, slparams->params);
 
     // TODO: save kernel size for measuring in LZ
-    boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->params;
+    boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
     *apic = 0x000c0500;               // INIT, all excluding self
 
     grub_tis_init();
