@@ -25,27 +25,32 @@
 #include <grub/dl.h>
 #include <grub/slaunch.h>
 
+static inline grub_uint32_t *get_bootloader_data_addr (struct grub_slaunch_module *mod)
+{
+  grub_uint16_t *ptr = (grub_uint16_t *)mod->addr;
+  return (grub_uint32_t *)(mod->addr + ptr[1]);
+}
+
 grub_err_t
 grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 {
   if (grub_slaunch_get_modules()) {
-    grub_uint32_t *slb = (grub_uint32_t *)grub_slaunch_get_modules()->target;
+    grub_uint32_t *boot_data = get_bootloader_data_addr(grub_slaunch_get_modules());
     grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
 
     grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->real_mode_target);
     grub_printf("%s:%d: prot_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->prot_mode_target);
     grub_printf("%s:%d: params: %p\r\n", __FUNCTION__, __LINE__, slparams->params);
 
-    // TODO: move outside of measured part of SLB
-    // TODO2: save kernel size for measuring in LZ
-    slb[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->params;
+    // TODO: save kernel size for measuring in LZ
+    boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
     *apic = 0x000c0500;               // INIT, all excluding self
 
     grub_tis_init();
     grub_tis_request_locality(0xff);  // relinquish all localities
 
     grub_dprintf("linux", "Invoke SKINIT\r\n");
-    return grub_relocator_skinit_boot (slparams->relocator, slb, 0);
+    return grub_relocator_skinit_boot (slparams->relocator, grub_slaunch_get_modules()->target, 0);
   } else {
     grub_dprintf("linux", "Secure Loader module not loaded, run slaunch_module\r\n");
   }
