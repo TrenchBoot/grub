@@ -1,0 +1,29 @@
+stages:
+  - build
+
+build_and_install:
+  stage: build
+  image: debian:stable-20200414
+  tags:
+    - local
+  before_script:
+    - apt update && apt install -y build-essential bison flex python pkg-config autoconf automake git gettext autopoint libfuse-dev libdevmapper-dev libfreetype6-dev
+  script:
+    - ./bootstrap
+    - ./configure
+    - make -j2
+    - make install
+    - grub-install --version
+    - ls /usr/local/lib/grub/i386-pc/slaunch.module
+    - ls /usr/local/lib/grub/i386-pc/slaunch.mod
+
+build_nixpkg:
+  stage: build
+  variables:
+    NIXPKG: "grub"
+    GRUB_COMMIT: "$CI_COMMIT_SHA"
+    GRUB_TAG: "$CI_COMMIT_REF_NAME"
+  trigger:
+    project: trenchboot1/3mdeb/nixos-trenchboot-configs
+    branch: master
+    strategy: depend
