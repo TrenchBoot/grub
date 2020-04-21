@@ -191,7 +191,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
   addr = get_virtual_current_address (ch);
   grub_printf("%s:%d: addr: %p\r\n", __FUNCTION__, __LINE__, addr);
   target = get_physical_target_address (ch);
-  grub_printf("%s:%d: target: %p\r\n", __FUNCTION__, __LINE__, target);
+  grub_printf("%s:%d: target: %p\r\n", __FUNCTION__, __LINE__, (void*) target);
 
   grub_printf("%s:%d: add module\r\n", __FUNCTION__, __LINE__);
   err = grub_slaunch_add_module (addr, target, size);
