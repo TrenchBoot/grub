@@ -6008,10 +6008,10 @@ grub-mkimage -O x86_64-efi -o grubx64.efi -p '(tftp)/grub' --sbat sbat.csv efine
 @node Measured Boot
 @section Measuring boot components
 
-If the tpm module is loaded and the platform has a Trusted Platform Module
-installed, GRUB will log each command executed and each file loaded into the
-TPM event log and extend the PCR values in the TPM correspondingly. All events
-will be logged into the PCR described below with a type of EV_IPL and an
+If the tpm_verifier module is loaded and the platform has a Trusted Platform
+Module installed, GRUB will log each command executed and each file loaded into
+the TPM event log and extend the PCR values in the TPM correspondingly. All
+events will be logged into the PCR described below with a type of EV_IPL and an
 event description as described below.
 
 @multitable @columnfractions 0.3 0.1 0.6
@@ -6036,9 +6036,10 @@ corresponding to the filename.
 
 GRUB will not measure its own @file{core.img} - it is expected that firmware
 will carry this out. GRUB will also not perform any measurements until the
-tpm module is loaded. As such it is recommended that the tpm module be built
-into @file{core.img} in order to avoid a potential gap in measurement between
-@file{core.img} being loaded and the tpm module being loaded.
+tpm_verifier module is loaded. As such it is recommended that the tpm_verifier
+module be built into @file{core.img} in order to avoid a potential gap in
+measurement between @file{core.img} being loaded and the tpm_verifier module
+being loaded.
 
 Measured boot is currently only supported on EFI platforms.
 
