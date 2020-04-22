@@ -88,13 +88,13 @@ grub_tpm_verify_string (char *str, enum grub_verify_string_type type)
 }
 
 struct grub_file_verifier grub_tpm_verifier = {
-  .name = "tpm",
+  .name = "tpm_verifier",
   .init = grub_tpm_verify_init,
   .write = grub_tpm_verify_write,
   .verify_string = grub_tpm_verify_string,
 };
 
-GRUB_MOD_INIT (tpm)
+GRUB_MOD_INIT (tpm_verifier)
 {
   /*
    * Even though this now calls ibmvtpm's grub_tpm_present() from GRUB_MOD_INIT(),
@@ -107,7 +107,7 @@ GRUB_MOD_INIT (tpm)
   grub_verifier_register (&grub_tpm_verifier);
 }
 
-GRUB_MOD_FINI (tpm)
+GRUB_MOD_FINI (tpm_verifier)
 {
   if (!grub_tpm_present())
     return;
