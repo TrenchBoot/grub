@@ -2620,8 +2620,8 @@ module = {
 };
 
 module = {
-  name = tpm;
-  common = commands/tpm.c;
+  name = tpm_verifier;
+  common = commands/tpm_verifier.c;
   efi = commands/efi/tpm.c;
   enable = efi;
 };
