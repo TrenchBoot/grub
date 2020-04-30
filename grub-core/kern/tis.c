@@ -19,8 +19,8 @@
  *  published on http://ptgmedia.pearsoncmg.com.
  */
 
-#include <grub/cpu/io.h>
-#include <grub/cpu/mmio.h>
+#include <grub/i386/io.h>
+#include <grub/i386/mmio.h>
 #include <grub/mm.h>
 #include <grub/types.h>
 #include <grub/misc.h>

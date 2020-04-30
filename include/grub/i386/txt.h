@@ -22,7 +22,7 @@
 #define GRUB_TXT_H 1
 
 #include <grub/types.h>
-#include <grub/cpu/mmio.h>
+#include <grub/i386/mmio.h>
 
 /* Intel TXT Software Developers Guide */
 
