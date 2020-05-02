@@ -51,6 +51,12 @@
 /* Maximum number of MBR signatures to store. */
 #define EDD_MBR_SIG_MAX			16
 
+/* Possible values for Linux secure_boot kernel parameter. */
+#define GRUB_LINUX_EFI_SECUREBOOT_MODE_UNSET	0
+#define GRUB_LINUX_EFI_SECUREBOOT_MODE_UNKNOWN	1
+#define GRUB_LINUX_EFI_SECUREBOOT_MODE_DISABLED	2
+#define GRUB_LINUX_EFI_SECUREBOOT_MODE_ENABLED	3
+
 #ifdef __x86_64__
 
 #define GRUB_LINUX_EFI_SIGNATURE	\
