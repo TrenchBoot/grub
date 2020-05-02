@@ -397,6 +397,87 @@ grub_linux_boot_mmap_fill (grub_uint64_t addr, grub_uint64_t size,
   return 0;
 }
 
+#ifdef GRUB_MACHINE_EFI
+/*
+ * Determine whether we're in secure boot mode.
+ *
+ * Please keep the logic in sync with the Linux kernel,
+ * drivers/firmware/efi/libstub/secureboot.c:efi_get_secureboot().
+ */
+static grub_uint8_t
+grub_efi_get_secureboot (void)
+{
+  grub_efi_guid_t efi_variable_guid = GRUB_EFI_GLOBAL_VARIABLE_GUID;
+  grub_efi_guid_t efi_shim_lock_guid = GRUB_EFI_SHIM_LOCK_GUID;
+  grub_efi_status_t status;
+  grub_efi_uint32_t attr = 0;
+  grub_size_t size = 0;
+  grub_uint8_t *secboot = NULL;
+  grub_uint8_t *setupmode = NULL;
+  grub_uint8_t *moksbstate = NULL;
+  grub_uint8_t secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_UNKNOWN;
+  const char *secureboot_str = "UNKNOWN";
+
+  status = grub_efi_get_variable ("SecureBoot", &efi_variable_guid,
+				  &size, (void **) &secboot);
+
+  if (status == GRUB_EFI_NOT_FOUND)
+    {
+      secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_DISABLED;
+      goto out;
+    }
+
+  if (status != GRUB_EFI_SUCCESS)
+    goto out;
+
+  status = grub_efi_get_variable ("SetupMode", &efi_variable_guid,
+				  &size, (void **) &setupmode);
+
+  if (status != GRUB_EFI_SUCCESS)
+    goto out;
+
+  if ((*secboot == 0) || (*setupmode == 1))
+    {
+      secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_DISABLED;
+      goto out;
+    }
+
+  /*
+   * See if a user has put the shim into insecure mode. If so, and if the
+   * variable doesn't have the runtime attribute set, we might as well
+   * honor that.
+   */
+  status = grub_efi_get_variable_with_attributes ("MokSBState", &efi_shim_lock_guid,
+						  &size, (void **) &moksbstate, &attr);
+
+  /* If it fails, we don't care why. Default to secure. */
+  if (status != GRUB_EFI_SUCCESS)
+    {
+      secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_ENABLED;
+      goto out;
+    }
+
+  if (!(attr & GRUB_EFI_VARIABLE_RUNTIME_ACCESS) && *moksbstate == 1)
+    secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_DISABLED;
+
+  secureboot = GRUB_LINUX_EFI_SECUREBOOT_MODE_ENABLED;
+
+ out:
+  grub_free (moksbstate);
+  grub_free (setupmode);
+  grub_free (secboot);
+
+  if (secureboot == GRUB_LINUX_EFI_SECUREBOOT_MODE_DISABLED)
+    secureboot_str = "Disabled";
+  else if (secureboot == GRUB_LINUX_EFI_SECUREBOOT_MODE_ENABLED)
+    secureboot_str = "Enabled";
+
+  grub_dprintf ("linux", "UEFI Secure Boot state: %s\n", secureboot_str);
+
+  return secureboot;
+}
+#endif
+
 static grub_err_t
 grub_linux_boot (void)
 {
@@ -579,6 +660,9 @@ grub_linux_boot (void)
     grub_efi_uintn_t efi_desc_size;
     grub_size_t efi_mmap_target;
     grub_efi_uint32_t efi_desc_version;
+
+    ctx.params->secure_boot = grub_efi_get_secureboot ();
+
     err = grub_efi_finish_boot_services (&efi_mmap_size, efi_mmap_buf, NULL,
 					 &efi_desc_size, &efi_desc_version);
     if (err)
@@ -790,7 +874,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 
   linux_params.code32_start = prot_mode_target + lh.code32_start - GRUB_LINUX_BZIMAGE_ADDR;
   linux_params.kernel_alignment = (1 << align);
-  linux_params.ps_mouse = linux_params.padding10 = 0;
+  linux_params.ps_mouse = linux_params.padding11 = 0;
   linux_params.type_of_loader = GRUB_LINUX_BOOT_LOADER_TYPE;
 
   /* These two are used (instead of cmd_line_ptr) by older versions of Linux,
