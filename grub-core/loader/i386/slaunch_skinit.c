@@ -44,9 +44,12 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 
     // TODO: save kernel size for measuring in LZ
     boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
+    grub_printf("%s:%d: broadcasting INIT\r\n", __FUNCTION__, __LINE__);
     *apic = 0x000c0500;               // INIT, all excluding self
 
+    grub_printf("%s:%d: grub_tis_init()\r\n", __FUNCTION__, __LINE__);
     grub_tis_init();
+    grub_printf("%s:%d: grub_tis_request_locality()\r\n", __FUNCTION__, __LINE__);
     grub_tis_request_locality(0xff);  // relinquish all localities
 
     grub_dprintf("linux", "Invoke SKINIT\r\n");
