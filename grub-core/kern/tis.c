@@ -113,13 +113,18 @@ grub_burst_wait (void)
 grub_uint8_t
 grub_tis_request_locality (grub_uint8_t l)
 {
-  grub_write8 (ACCESS_RELINQUISH_LOCALITY, ACCESS(locality));
-  grub_write8 (ACCESS_REQUEST_USE, ACCESS(l));
+  if (locality <= MAX_LOCALITY)
+    grub_write8 (ACCESS_RELINQUISH_LOCALITY, ACCESS(locality));
 
-  /* wait for locality to be granted */
-  if (grub_read8 (ACCESS(l) & ACCESS_ACTIVE_LOCALITY))
+  if (l == NO_LOCALITY)
+    locality = l;
+
+  if (l <= MAX_LOCALITY)
     {
-      if (l <= MAX_LOCALITY)
+      grub_write8 (ACCESS_REQUEST_USE, ACCESS(l));
+
+      /* wait for locality to be granted */
+      if (grub_read8 (ACCESS(l) & ACCESS_ACTIVE_LOCALITY))
         locality = l;
       else
         locality = NO_LOCALITY;
