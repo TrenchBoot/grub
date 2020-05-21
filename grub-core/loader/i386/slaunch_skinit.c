@@ -38,18 +38,20 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
     grub_uint32_t *boot_data = get_bootloader_data_addr(grub_slaunch_get_modules());
     grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
 
-    grub_printf("%s:%d: real_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->real_mode_target);
-    grub_printf("%s:%d: prot_mode_target: 0x%x\r\n", __FUNCTION__, __LINE__, slparams->prot_mode_target);
-    grub_printf("%s:%d: params: %p\r\n", __FUNCTION__, __LINE__, slparams->params);
+    grub_dprintf ("slaunch", "real_mode_target: 0x%x\r\n",
+                  slparams->real_mode_target);
+    grub_dprintf ("slaunch", "prot_mode_target: 0x%x\r\n",
+                  slparams->prot_mode_target);
+    grub_dprintf ("slaunch", "params: %p\r\n", slparams->params);
 
     // TODO: save kernel size for measuring in LZ
     boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
-    grub_printf("%s:%d: broadcasting INIT\r\n", __FUNCTION__, __LINE__);
+    grub_dprintf ("slaunch", "broadcasting INIT\r\n");
     *apic = 0x000c0500;               // INIT, all excluding self
 
-    grub_printf("%s:%d: grub_tis_init()\r\n", __FUNCTION__, __LINE__);
+    grub_dprintf ("slaunch", "grub_tis_init\r\n");
     grub_tis_init();
-    grub_printf("%s:%d: grub_tis_request_locality()\r\n", __FUNCTION__, __LINE__);
+    grub_dprintf ("slaunch", "grub_tis_request_locality\r\n");
     grub_tis_request_locality(0xff);  // relinquish all localities
 
     grub_dprintf("linux", "Invoke SKINIT\r\n");
