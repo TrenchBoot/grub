@@ -91,20 +91,20 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("argument expected"));
 
   /* Should be executing on the BSP  */
-  grub_printf("%s:%d: about to do rdmsr: ", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: about to do rdmsr: ", __FUNCTION__, __LINE__);
   msr_value = grub_rdmsr (GRUB_MSR_X86_APICBASE);
   if (! (msr_value & GRUB_MSR_X86_APICBASE_BSP))
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
 
-  grub_printf("OK\r\n");
-  grub_printf("%s:%d: about to do cpuid ", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "OK\r\n");
+  grub_dprintf ("slaunch", "%s:%d: about to do cpuid ", __FUNCTION__, __LINE__);
   if (! grub_cpu_is_cpuid_supported ())
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPUID not supported"));
 
-  grub_printf("(supported) ");
+  grub_dprintf ("slaunch", "(supported) ");
   grub_cpuid (0, eax, manufacturer[0], manufacturer[2], manufacturer[1]);
 
-  grub_printf("OK\r\n");
+  grub_dprintf ("slaunch", "OK\r\n");
   if (grub_memcmp (argv[0], "txt", 3) == 0)
     {
       if (grub_memcmp (manufacturer, "GenuineIntel", 12) != 0)
@@ -124,11 +124,11 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
     }
   else if (grub_memcmp (argv[0], "skinit", 6) == 0)
     {
-      grub_printf("%s:%d: check for manufacturer\r\n", __FUNCTION__, __LINE__);
+      grub_dprintf ("slaunch", "%s:%d: check for manufacturer\r\n", __FUNCTION__, __LINE__);
       if (grub_memcmp (manufacturer, "AuthenticAMD", 12) != 0)
         return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("AMD platform required for SKINIT"));
 
-      grub_printf("%s:%d: check for cpuid\r\n", __FUNCTION__, __LINE__);
+      grub_dprintf ("slaunch", "%s:%d: check for cpuid\r\n", __FUNCTION__, __LINE__);
       grub_cpuid (GRUB_AMD_CPUID_FEATURES, eax, ebx, ecx, edx);
       if (! (ecx & GRUB_SVM_CPUID_FEATURE) )
         return grub_error (GRUB_ERR_BAD_DEVICE, N_("CPU does not support AMD SVM"));
@@ -138,7 +138,7 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
       if (msr_value & GRUB_MSR_SVM_VM_CR_SVM_DISABLE)
         return grub_error (GRUB_ERR_BAD_DEVICE, "BIOS has AMD SVM disabled");
 
-      grub_printf("%s:%d: set slaunch\r\n", __FUNCTION__, __LINE__);
+      grub_dprintf ("slaunch", "%s:%d: set slaunch\r\n", __FUNCTION__, __LINE__);
       grub_linux_slaunch_set (grub_slaunch_boot_skinit);
     }
   else
@@ -158,12 +158,13 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
   void *addr = NULL;
   grub_addr_t target;
 
-  grub_printf("%s:%d: check argc\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: check argc\r\n", __FUNCTION__, __LINE__);
 
   if (argc == 0)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
-  grub_printf("%s:%d: check relocator\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: check relocator\r\n", __FUNCTION__,
+                __LINE__);
 
   if (! relocator)
     {
@@ -172,17 +173,17 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
         return grub_errno;
     }
 
-  grub_printf("%s:%d: open file\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: open file\r\n", __FUNCTION__, __LINE__);
   file = grub_file_open (argv[0], GRUB_FILE_TYPE_SLAUNCH_MODULE);
   if (! file)
     return grub_errno;
 
-  grub_printf("%s:%d: get size\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: get size\r\n", __FUNCTION__, __LINE__);
   size = grub_file_size (file);
   if (size == 0)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("file size is zero"));
 
-  grub_printf("%s:%d: allocate memory\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: allocate memory\r\n", __FUNCTION__, __LINE__);
   err = grub_relocator_alloc_chunk_align (relocator, &ch,
 					  0, (0xffffffff - size) + 1,
 					  size, 0x10000,	/* SLB must be 64k aligned */
@@ -194,11 +195,11 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
     }
 
   addr = get_virtual_current_address (ch);
-  grub_printf("%s:%d: addr: %p\r\n", __FUNCTION__, __LINE__, addr);
+  grub_dprintf ("slaunch", "%s:%d: addr: %p\r\n", __FUNCTION__, __LINE__, addr);
   target = get_physical_target_address (ch);
-  grub_printf("%s:%d: target: %p\r\n", __FUNCTION__, __LINE__, (void*) target);
+  grub_dprintf ("slaunch", "%s:%d: target: %p\r\n", __FUNCTION__, __LINE__, (void*) target);
 
-  grub_printf("%s:%d: add module\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: add module\r\n", __FUNCTION__, __LINE__);
   err = grub_slaunch_add_module (addr, target, size);
   if (err)
     {
@@ -207,7 +208,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
     }
 
 
-  grub_printf("%s:%d: read file\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: read file\r\n", __FUNCTION__, __LINE__);
   if (grub_file_read (file, addr, size) != size)
     {
       grub_file_close (file);
@@ -217,7 +218,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
       return grub_errno;
     }
 
-  grub_printf("%s:%d: close file\r\n", __FUNCTION__, __LINE__);
+  grub_dprintf ("slaunch", "%s:%d: close file\r\n", __FUNCTION__, __LINE__);
   grub_file_close (file);
 
   return GRUB_ERR_NONE;
