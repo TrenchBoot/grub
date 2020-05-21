@@ -23,7 +23,7 @@
 #include <grub/misc.h>
 #include <grub/types.h>
 #include <grub/dl.h>
-#include <grub/cpu/txt.h>
+#include <grub/i386/txt.h>
 #include <grub/slaunch.h>
 
 grub_err_t

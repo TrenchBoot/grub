@@ -28,10 +28,18 @@
 
 VARIABLE(grub_relocator_skinit_start)
 
+#ifndef __x86_64__
 	/* mov imm32, %eax */
 	.byte	0xb8
 VARIABLE(grub_relocator_skinit_slb)
 	.long	0
+#else
+	/* mov imm64, %rax */
+	.byte	0x48
+	.byte	0xb8
+VARIABLE(grub_relocator_skinit_slb)
+	.quad	0
+#endif
 
 	skinit
 VARIABLE(grub_relocator_skinit_end)

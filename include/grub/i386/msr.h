@@ -55,13 +55,9 @@ grub_rdmsr(grub_uint32_t msr)
 {
   grub_uint64_t val = 0;
 
-#ifdef __x86_64__
-  asm volatile("rdmsr" : "=A" (val) : "c" (msr));
-#else
   grub_uint32_t low, high;
   asm volatile("rdmsr"  : "=a" (low), "=d" (high) : "c" (msr));
   val = ((low) | (grub_uint64_t)(high) << 32);
-#endif
 
   return val;
 }
@@ -69,14 +65,10 @@ grub_rdmsr(grub_uint32_t msr)
 static inline void
 grub_wrmsr(grub_uint32_t msr, grub_uint64_t val)
 {
-#ifdef __x86_64__
-  asm volatile("wrmsr" : "=A" (val) : "c" (msr));
-#else
   grub_uint32_t low, high;
   high = (grub_uint32_t) ((val & 0xFFFFFFFF00000000LL) >> 32);
   low = (grub_uint32_t) (val & 0xFFFFFFFFLL);
   asm volatile("wrmsr"  : "=a" (low), "=d" (high) : "c" (msr));
-#endif
 }
 
 #endif

@@ -91,15 +91,20 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("argument expected"));
 
   /* Should be executing on the BSP  */
+  grub_printf("%s:%d: about to do rdmsr: ", __FUNCTION__, __LINE__);
   msr_value = grub_rdmsr (GRUB_MSR_X86_APICBASE);
   if (! (msr_value & GRUB_MSR_X86_APICBASE_BSP))
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
 
+  grub_printf("OK\r\n");
+  grub_printf("%s:%d: about to do cpuid ", __FUNCTION__, __LINE__);
   if (! grub_cpu_is_cpuid_supported ())
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPUID not supported"));
 
+  grub_printf("(supported) ");
   grub_cpuid (0, eax, manufacturer[0], manufacturer[2], manufacturer[1]);
 
+  grub_printf("OK\r\n");
   if (grub_memcmp (argv[0], "txt", 3) == 0)
     {
       if (grub_memcmp (manufacturer, "GenuineIntel", 12) != 0)
