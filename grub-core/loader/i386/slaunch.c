@@ -91,20 +91,15 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("argument expected"));
 
   /* Should be executing on the BSP  */
-  grub_dprintf ("slaunch", "about to do rdmsr: ");
   msr_value = grub_rdmsr (GRUB_MSR_X86_APICBASE);
   if (! (msr_value & GRUB_MSR_X86_APICBASE_BSP))
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
 
-  grub_dprintf ("slaunch", "OK\r\n");
-  grub_dprintf ("slaunch", "about to do cpuid ");
   if (! grub_cpu_is_cpuid_supported ())
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPUID not supported"));
 
-  grub_dprintf ("slaunch", "(supported) ");
   grub_cpuid (0, eax, manufacturer[0], manufacturer[2], manufacturer[1]);
 
-  grub_dprintf ("slaunch", "OK\r\n");
   if (grub_memcmp (argv[0], "txt", 3) == 0)
     {
       if (grub_memcmp (manufacturer, "GenuineIntel", 12) != 0)
@@ -172,12 +167,12 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
         return grub_errno;
     }
 
-  grub_dprintf ("slaunch", "open file\r\n");
+  grub_dprintf ("slaunch", "open slaunch module file\r\n");
   file = grub_file_open (argv[0], GRUB_FILE_TYPE_SLAUNCH_MODULE);
   if (! file)
-    return grub_errno;
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("slaunch module file is missing"));
 
-  grub_dprintf ("slaunch", "get size\r\n");
+  grub_dprintf ("slaunch", "get slaunch module size\r\n");
   size = grub_file_size (file);
   if (size == 0)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("file size is zero"));
