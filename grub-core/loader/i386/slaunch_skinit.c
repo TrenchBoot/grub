@@ -44,7 +44,6 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
                   slparams->prot_mode_target);
     grub_dprintf ("slaunch", "params: %p\r\n", slparams->params);
 
-    // TODO: save kernel size for measuring in LZ
     boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
     grub_dprintf ("slaunch", "broadcasting INIT\r\n");
     *apic = 0x000c0500;               // INIT, all excluding self
@@ -60,4 +59,26 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
     grub_dprintf("linux", "Secure Loader module not loaded, run slaunch_module\r\n");
   }
   return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_slaunch_mb2_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
+{
+  grub_uint32_t *boot_data = get_bootloader_data_addr(grub_slaunch_get_modules());
+  grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
+
+  // TODO: save kernel size for measuring in LZ for non-ELF files?
+  boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = state.ebx;
+  boot_data[GRUB_SL_ZEROPAGE_OFFSET/4 - 1] = 2;	// Pass boot protocol used
+
+  grub_dprintf ("slaunch", "broadcasting INIT\r\n");
+  *apic = 0x000c0500;               // INIT, all excluding self
+
+  grub_dprintf ("slaunch", "grub_tis_init\r\n");
+  grub_tis_init();
+  grub_dprintf ("slaunch", "grub_tis_request_locality\r\n");
+  grub_tis_request_locality(0xff);  // relinquish all localities
+
+  grub_dprintf("slaunch", "Invoke SKINIT\r\n");
+  return grub_relocator_skinit_boot (rel, grub_slaunch_get_modules()->target, 0);
 }

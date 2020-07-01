@@ -50,6 +50,7 @@
 #include <grub/video.h>
 #include <grub/memory.h>
 #include <grub/i18n.h>
+#include <grub/slaunch.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -161,6 +162,11 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_get_modules())
+    grub_slaunch_mb2_boot(rel, state);
+#endif
+
   grub_relocator32_boot (rel, state, 0);
 }
 #else
