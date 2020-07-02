@@ -62,6 +62,8 @@ search_drtm_in_rsdt (struct grub_acpi_table_header *t)
 		     sizeof (t->signature)) == 0)
       return (struct drtm_t *)t;
   }
+
+  return NULL;
 }
 
 static struct drtm_t *
@@ -92,6 +94,8 @@ search_drtm_in_xsdt (struct grub_acpi_table_header *t)
 		     sizeof (t->signature)) == 0)
       return (struct drtm_t *)t;
   }
+
+  return NULL;
 }
 
 static struct drtm_t *
