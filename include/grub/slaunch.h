@@ -51,6 +51,8 @@ struct grub_slaunch_module
   struct grub_slaunch_module *next;
   grub_uint8_t *addr;
   grub_addr_t target;
+  grub_addr_t event_log_addr;
+  grub_size_t event_log_size;
   grub_size_t size;
 };
 
