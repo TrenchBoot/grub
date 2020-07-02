@@ -28,6 +28,8 @@
 
 #define GRUB_SL_BOOTPARAMS_OFFSET	0x12c
 #define GRUB_SL_ZEROPAGE_OFFSET		0x14
+#define GRUB_SL_EVENTLOG_ADDR_OFFSET	0x18
+#define GRUB_SL_EVENTLOG_SIZE_OFFSET	0x1c
 
 struct grub_slaunch_info
 {
@@ -51,8 +53,6 @@ struct grub_slaunch_module
   struct grub_slaunch_module *next;
   grub_uint8_t *addr;
   grub_addr_t target;
-  grub_addr_t event_log_addr;
-  grub_size_t event_log_size;
   grub_size_t size;
 };
 

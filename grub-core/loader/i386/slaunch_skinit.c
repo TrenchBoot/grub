@@ -42,51 +42,76 @@ struct drtm_t {
 	grub_uint8_t  var_len_fields[];
 } __attribute__ (( packed ));
 
-static void
-disp_acpi_table (struct grub_acpi_table_header *t)
+static struct drtm_t *
+search_drtm_in_rsdt (struct grub_acpi_table_header *t)
 {
-  grub_dprintf ("slaunch", "ACPI DRTM table at %p \n", t);
-  // print_field (t->signature);
-  grub_dprintf ("slaunch", " length= 0x%x rev=0x%x checksum=0x%02x\n", t->length, t->revision, t->checksum);
-  // print_field (t->oemid);
-  // print_field (t->oemtable);
-  grub_dprintf ("slaunch", "OEMrev=0x%x \n", t->oemrev);
-  // print_field (t->creator_id);
-  //grub_dprintf ("slaunch", " 0x%x \n", t->creator_rev);
+  grub_uint32_t len;
+  grub_uint32_t *desc;
+
+  len = t->length - sizeof (*t);
+  desc = (grub_uint32_t *) (t + 1);
+
+  for (; len >= sizeof (*desc); desc++, len -= sizeof (*desc)) {
+
+    t = (struct grub_acpi_table_header *) (grub_addr_t) *desc;
+
+    if (t == NULL)
+      continue;
+
+    if (grub_memcmp (t->signature, GRUB_ACPI_DRTM_SIGNATURE,
+		     sizeof (t->signature)) == 0)
+      return (struct drtm_t *)t;
+  }
 }
 
-static void
-disp_acpi_xsdt_table (struct grub_acpi_table_header *t)
+static struct drtm_t *
+search_drtm_in_xsdt (struct grub_acpi_table_header *t)
 {
   grub_uint32_t len;
   grub_uint64_t *desc;
 
   len = t->length - sizeof (*t);
   desc = (grub_uint64_t *) (t + 1);
-  for (; len >= sizeof (*desc); desc++, len -= sizeof (*desc))
-    {
-      t = (struct grub_acpi_table_header *) (grub_addr_t) *desc;
 
-      if (t == NULL)
-	      continue;
+  for (; len >= sizeof (*desc); desc++, len -= sizeof (*desc)) {
 
-      if (grub_memcmp (t->signature, GRUB_ACPI_DRTM_SIGNATURE,
-		       sizeof (t->signature)) == 0)
-          disp_acpi_table (t);
-    }
+#if GRUB_CPU_SIZEOF_VOID_P == 4
+    if (*desc >= (1ULL << 32))
+      {
+	grub_printf ("Unreachable table\n");
+	continue;
+      }
+#endif
+
+    t = (struct grub_acpi_table_header *) (grub_addr_t) *desc;
+
+    if (t == NULL)
+      continue;
+
+    if (grub_memcmp (t->signature, GRUB_ACPI_DRTM_SIGNATURE,
+		     sizeof (t->signature)) == 0)
+      return (struct drtm_t *)t;
+  }
 }
 
-static grub_err_t
-grub_cmd_lsacpi (void)
+static struct drtm_t *
+get_drtm_acpi_table (void)
 {
-      struct grub_acpi_rsdp_v20 *rsdp2 = grub_acpi_get_rsdpv2 ();
-      if (!rsdp2)
-	grub_dprintf ("slaunch", "No RSDPv2\n");
-      else
-	    {
-	      disp_acpi_xsdt_table ((void *) (grub_addr_t) rsdp2->xsdt_addr);
-	    }
-  return GRUB_ERR_NONE;
+  struct drtm_t *drtm = NULL;
+  struct grub_acpi_rsdp_v10 *rsdp1 = grub_acpi_get_rsdpv1();
+
+  if (rsdp1)
+    drtm = search_drtm_in_rsdt ((void *) (grub_addr_t) rsdp1->rsdt_addr);
+
+  if (!drtm) {
+    struct grub_acpi_rsdp_v20 *rsdp2 = grub_acpi_get_rsdpv2 ();
+    if (!rsdp2)
+      grub_dprintf ("slaunch", "No RSDP\n");
+    else
+      drtm = search_drtm_in_xsdt ((void *) (grub_addr_t) rsdp2->xsdt_addr);
+  }
+
+  return drtm;
 }
 
 static inline grub_uint32_t *get_bootloader_data_addr (struct grub_slaunch_module *mod)
@@ -101,6 +126,7 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
   if (grub_slaunch_get_modules()) {
     grub_uint32_t *boot_data = get_bootloader_data_addr(grub_slaunch_get_modules());
     grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
+    struct drtm_t *drtm = get_drtm_acpi_table();
 
     grub_dprintf ("slaunch", "real_mode_target: 0x%x\r\n",
                   slparams->real_mode_target);
@@ -109,6 +135,11 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
     grub_dprintf ("slaunch", "params: %p\r\n", slparams->params);
 
     boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = (grub_uint32_t)slparams->real_mode_target;
+    if (drtm) {
+      boot_data[GRUB_SL_EVENTLOG_ADDR_OFFSET/4] = drtm->Log_Area_Start;
+      boot_data[GRUB_SL_EVENTLOG_SIZE_OFFSET/4] = drtm->Log_Area_Length;
+    }
+
     grub_dprintf ("slaunch", "broadcasting INIT\r\n");
     *apic = 0x000c0500;               // INIT, all excluding self
 
@@ -116,8 +147,6 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
     grub_tis_init();
     grub_dprintf ("slaunch", "grub_tis_request_locality\r\n");
     grub_tis_request_locality(0xff);  // relinquish all localities
-    grub_dprintf ("slaunch", "display DRTM table\r\n");
-    grub_cmd_lsacpi();
 
     grub_dprintf("linux", "Invoke SKINIT\r\n");
     return grub_relocator_skinit_boot (slparams->relocator, grub_slaunch_get_modules()->target, 0);
@@ -132,10 +161,15 @@ grub_slaunch_mb2_boot (struct grub_relocator *rel, struct grub_relocator32_state
 {
   grub_uint32_t *boot_data = get_bootloader_data_addr(grub_slaunch_get_modules());
   grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
+  struct drtm_t *drtm = get_drtm_acpi_table();
 
   // TODO: save kernel size for measuring in LZ for non-ELF files?
   boot_data[GRUB_SL_ZEROPAGE_OFFSET/4] = state.ebx;
   boot_data[GRUB_SL_ZEROPAGE_OFFSET/4 - 1] = 2;	// Pass boot protocol used
+  if (drtm) {
+    boot_data[GRUB_SL_EVENTLOG_ADDR_OFFSET/4] = drtm->Log_Area_Start;
+    boot_data[GRUB_SL_EVENTLOG_SIZE_OFFSET/4] = drtm->Log_Area_Length;
+  }
 
   grub_dprintf ("slaunch", "broadcasting INIT\r\n");
   *apic = 0x000c0500;               // INIT, all excluding self
