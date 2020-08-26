@@ -716,6 +716,7 @@ grub_linux_boot (void)
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
       slparams.ap_wake_block = ctx.real_mode_target + ctx.real_size + efi_mmap_size;
+      slparams.ap_wake_block_size = ap_wake_block_size;
       grub_memset ((void *) ((grub_addr_t) real_mode_mem + ctx.real_size +
 					   efi_mmap_size), 0, ap_wake_block_size);
       grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",

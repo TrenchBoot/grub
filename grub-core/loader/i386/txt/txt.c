@@ -532,6 +532,10 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   os_mle_data->saved_misc_enable_msr = grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
 
   os_mle_data->ap_wake_block = slparams->ap_wake_block;
+  os_mle_data->ap_wake_block_size = slparams->ap_wake_block_size;
+
+  os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
+  os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
 
   save_mtrrs (os_mle_data);
 
@@ -629,7 +633,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
       heap_event_log_pointer2_1_element->size = sizeof (*heap_event_log_pointer2_1_element);
 
       /* FIXME: First option is correct way to do!!! */
-#if 0
+#if 1
       heap_event_log_pointer2_1_element->phys_addr = slparams->tpm_evt_log_base;
       heap_event_log_pointer2_1_element->allocated_event_container_size = slparams->tpm_evt_log_size;
 #else
