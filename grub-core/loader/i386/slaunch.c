@@ -180,7 +180,8 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
   grub_dprintf ("slaunch", "allocate memory\r\n");
   err = grub_relocator_alloc_chunk_align (relocator, &ch,
 					  0, (0xffffffff - size) + 1,
-					  size, 0x10000,	/* SLB must be 64k aligned */
+					  size > 0x10000 ? size : 0x10000, /* Alloc at least 64k */
+					  0x10000,	/* SLB must be 64k aligned */
 					  GRUB_RELOCATOR_PREFERENCE_LOW, 1);
   if (err)
     {
