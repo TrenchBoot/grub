@@ -370,15 +370,14 @@ struct grub_slaunch_mtrr_state
 struct grub_txt_os_mle_data
 {
   grub_uint32_t version;
-  grub_uint32_t zero_page_addr;
-  grub_uint8_t msb_key_hash[64];
+  grub_uint32_t boot_params_addr;
   grub_uint64_t saved_misc_enable_msr;
   struct grub_slaunch_mtrr_state saved_bsp_mtrrs;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
   grub_uint64_t evtlog_addr;
   grub_uint32_t evtlog_size;
-  grub_uint8_t mle_scratch[16];
+  grub_uint8_t mle_scratch[64];
 } GRUB_PACKED;
 
 struct grub_txt_os_sinit_data
