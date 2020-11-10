@@ -57,7 +57,8 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
 		  char *argv[] __attribute__ ((unused)))
 {
   grub_uint32_t manufacturer[3];
-  grub_uint32_t eax;
+  grub_uint32_t eax, ebx, ecx, edx;
+  grub_uint64_t msr_value;
   grub_err_t err;
 
   if (!grub_cpu_is_cpuid_supported ())
@@ -78,6 +79,20 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
 	return err;
 
       slp = SLP_INTEL_TXT;
+    }
+  else if (!grub_memcmp (manufacturer, "AuthenticAMD", 12))
+    {
+
+      grub_cpuid (GRUB_AMD_CPUID_FEATURES, eax, ebx, ecx, edx);
+      if (! (ecx & GRUB_SVM_CPUID_FEATURE) )
+        return grub_error (GRUB_ERR_BAD_DEVICE, N_("CPU does not support AMD SVM"));
+
+      /* Check whether SVM feature is disabled in BIOS */
+      msr_value = grub_rdmsr (GRUB_MSR_AMD64_VM_CR);
+      if (msr_value & GRUB_MSR_SVM_VM_CR_SVM_DISABLE)
+        return grub_error (GRUB_ERR_BAD_DEVICE, N_("BIOS has AMD SVM disabled"));
+
+      slp = SLP_AMD_SKINIT;
     }
   else
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPU is unsupported"));
@@ -169,6 +184,10 @@ grub_cmd_slaunch_state (grub_command_t cmd __attribute__ ((unused)),
     {
       grub_printf ("Secure launcher: Intel TXT\n");
       grub_txt_state_show ();
+    }
+  else if (slp == SLP_AMD_SKINIT)
+    {
+      grub_printf ("Secure launcher: AMD SKINIT\n");
     }
 
   return GRUB_ERR_NONE;

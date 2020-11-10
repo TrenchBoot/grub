@@ -24,6 +24,7 @@
 /* Secure launch platform types. */
 #define SLP_NONE	0
 #define SLP_INTEL_TXT	1
+#define SLP_AMD_SKINIT	2
 
 #define GRUB_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_PAGE_SIZE)
 
@@ -43,8 +44,14 @@ struct grub_slaunch_params
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
-  grub_uint32_t sinit_acm_base;
-  grub_uint32_t sinit_acm_size;
+  union {
+    grub_uint32_t sinit_acm_base;
+    grub_uint32_t skl_base;
+  };
+  union {
+    grub_uint32_t sinit_acm_size;
+    grub_uint32_t skl_size;
+  };
   grub_uint64_t tpm_evt_log_base;
   grub_uint32_t tpm_evt_log_size;
 };

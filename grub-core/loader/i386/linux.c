@@ -35,6 +35,7 @@
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
 #include <grub/i386/slaunch.h>
+#include <grub/i386/skinit.h>
 #include <grub/i386/txt.h>
 #include <grub/linux.h>
 #include <grub/machine/kernel.h>
@@ -233,7 +234,7 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
     prot_mode_mem = get_virtual_current_address (ch);
     prot_mode_target = get_physical_target_address (ch);
 
-    if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    if (grub_slaunch_platform_type () != SLP_NONE)
       {
 	/* Zero out memory to get stable MLE measurements. */
 	grub_memset (prot_mode_mem, 0, total_size);
@@ -804,6 +805,32 @@ grub_linux_boot (void)
       state.ebx = slparams.sinit_acm_base;
       state.ecx = slparams.sinit_acm_size;
       state.edx = 0;
+    }
+  else if (state.edi == SLP_AMD_SKINIT)
+    {
+      grub_relocator_chunk_t ch;
+
+      state.eax = get_physical_target_address (ch);
+      slparams.boot_params_addr = ctx.real_mode_target;
+
+      /* Contrary to the TXT, on AMD we do not have vendor-provided blobs in
+       * reserved memory, we are using normal RAM */
+      err = grub_relocator_alloc_chunk_align (relocator, &ch,
+					0, (0xffffffff - GRUB_SKINIT_SLB_SIZE),
+					GRUB_SKINIT_SLB_SIZE,
+					GRUB_SKINIT_SLB_ALIGN,
+					GRUB_RELOCATOR_PREFERENCE_LOW, 1);
+
+      if (err != GRUB_ERR_NONE)
+	return err;
+
+      slparams.skl_base = (grub_uint32_t) get_virtual_current_address (ch);
+      slparams.skl_size = grub_skinit_get_sl_size ();
+
+      err = grub_skinit_boot_prepare (&slparams);
+
+      if (err != GRUB_ERR_NONE)
+	return err;
     }
   else
     {
