@@ -1918,6 +1918,7 @@ module = {
   x86 = loader/i386/txt/txt.c;
   x86 = loader/i386/txt/acmod.c;
   x86 = loader/i386/txt/verify.c;
+  x86 = loader/i386/skinit.c;
   enable = x86;
 };
 
