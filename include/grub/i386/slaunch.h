@@ -49,6 +49,7 @@ struct grub_slaunch_params
   grub_uint32_t tpm_evt_log_size;
 };
 
+void grub_get_drtm_evt_log (struct grub_slaunch_params *slparams);
 extern grub_uint32_t grub_slaunch_platform_type (void);
 extern void *grub_slaunch_module (void);
 

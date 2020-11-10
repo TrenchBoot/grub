@@ -29,8 +29,11 @@
 #include <grub/i386/mmio.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
+#include <grub/acpi.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
+
+#define GRUB_ACPI_DRTM_SIGNATURE "DRTM"
 
 static grub_uint32_t slp = SLP_NONE;
 
@@ -169,6 +172,116 @@ grub_cmd_slaunch_state (grub_command_t cmd __attribute__ ((unused)),
     }
 
   return GRUB_ERR_NONE;
+}
+
+/*
+ * See section 4.2.2 of TCG D-RTM Architecture Specification
+ * https://trustedcomputinggroup.org/wp-content/uploads/TCG_D-RTM_Architecture_v1-0_Published_06172013.pdf
+ */
+struct drtm_t {
+  struct grub_acpi_table_header hdr;
+  grub_uint64_t DL_Entry_Base;
+  grub_uint64_t DL_Entry_Length;
+  grub_uint32_t DL_Entry32;
+  grub_uint64_t DL_Entry64;
+  grub_uint64_t DLME_Exit;
+  grub_uint64_t Log_Area_Start;
+  grub_uint32_t Log_Area_Length;
+  grub_uint64_t Architecture_Dependent;
+  grub_uint32_t DRT_Flags;
+  grub_uint8_t  var_len_fields[];
+} __attribute__ (( packed ));
+
+static struct drtm_t *
+search_drtm_in_rsdt (struct grub_acpi_table_header *t)
+{
+  grub_uint32_t len;
+  grub_uint32_t *desc;
+
+  len = t->length - sizeof (*t);
+  desc = (grub_uint32_t *) (t + 1);
+
+  for (; len >= sizeof (*desc); desc++, len -= sizeof (*desc)) {
+
+    t = (struct grub_acpi_table_header *) (grub_addr_t) *desc;
+
+    if (t == NULL)
+      continue;
+
+    if (grub_memcmp (t->signature, GRUB_ACPI_DRTM_SIGNATURE,
+		     sizeof (t->signature)) == 0)
+      return (struct drtm_t *)t;
+  }
+
+  return NULL;
+}
+
+static struct drtm_t *
+search_drtm_in_xsdt (struct grub_acpi_table_header *t)
+{
+  grub_uint32_t len;
+  grub_uint64_t *desc;
+
+  len = t->length - sizeof (*t);
+  desc = (grub_uint64_t *) (t + 1);
+
+  for (; len >= sizeof (*desc); desc++, len -= sizeof (*desc)) {
+
+#if GRUB_CPU_SIZEOF_VOID_P == 4
+    if (*desc >= (1ULL << 32))
+      {
+	grub_printf ("Unreachable table\n");
+	continue;
+      }
+#endif
+
+    t = (struct grub_acpi_table_header *) (grub_addr_t) *desc;
+
+    if (t == NULL)
+      continue;
+
+    if (grub_memcmp (t->signature, GRUB_ACPI_DRTM_SIGNATURE,
+		     sizeof (t->signature)) == 0)
+      return (struct drtm_t *)t;
+  }
+
+  return NULL;
+}
+
+static struct drtm_t *
+get_drtm_acpi_table (void)
+{
+  struct drtm_t *drtm = NULL;
+  struct grub_acpi_rsdp_v10 *rsdp1 = grub_acpi_get_rsdpv1();
+
+  if (rsdp1)
+    drtm = search_drtm_in_rsdt ((void *) (grub_addr_t) rsdp1->rsdt_addr);
+
+  if (!drtm) {
+    struct grub_acpi_rsdp_v20 *rsdp2 = grub_acpi_get_rsdpv2 ();
+    if (!rsdp2)
+      grub_dprintf ("slaunch", "No RSDP\n");
+    else
+      drtm = search_drtm_in_xsdt ((void *) (grub_addr_t) rsdp2->xsdt_addr);
+  }
+
+  return drtm;
+}
+
+void grub_get_drtm_evt_log (struct grub_slaunch_params *slparams)
+{
+  struct drtm_t *drtm = get_drtm_acpi_table ();
+
+  slparams->tpm_evt_log_base = 0;
+  slparams->tpm_evt_log_size = 0;
+
+  if (drtm != NULL)
+  {
+    slparams->tpm_evt_log_base = drtm->Log_Area_Start;
+    slparams->tpm_evt_log_size = drtm->Log_Area_Length;
+
+    grub_memset ((void *)(grub_addr_t)drtm->Log_Area_Start, 0, drtm->Log_Area_Length);
+  }
 }
 
 static grub_command_t cmd_slaunch, cmd_slaunch_module, cmd_slaunch_state;

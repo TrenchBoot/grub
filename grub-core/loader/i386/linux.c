@@ -251,16 +251,20 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 		      slparams.mle_ptab_mem, (unsigned long) slparams.mle_ptab_target,
 		      (unsigned) slparams.mle_ptab_size);
 
-	if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
-					      0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
-					      GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
-					      GRUB_RELOCATOR_PREFERENCE_NONE, 1))
-	  goto fail;
+	grub_get_drtm_evt_log (&slparams);
+	if (slparams.tpm_evt_log_size == 0)
+	{
+	  if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+						0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
+						GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+						GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+	    goto fail;
 
-	slparams.tpm_evt_log_base = get_physical_target_address (ch);
-	slparams.tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+	  slparams.tpm_evt_log_base = get_physical_target_address (ch);
+	  slparams.tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
 
-	grub_memset (get_virtual_current_address (ch), 0, slparams.tpm_evt_log_size);
+	  grub_memset (get_virtual_current_address (ch), 0, slparams.tpm_evt_log_size);
+	}
 
 	grub_dprintf ("linux", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
 		      (unsigned long) slparams.tpm_evt_log_base,
