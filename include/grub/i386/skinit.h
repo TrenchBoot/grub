@@ -30,6 +30,8 @@
 #include <grub/cpu/relocator.h>
 #include <grub/i386/slaunch.h>
 
+int grub_skinit_is_slb (const void *slb_base, grub_uint32_t slb_size);
+
 grub_err_t grub_skinit_boot_prepare (struct grub_relocator *rel,
                                      struct grub_slaunch_params *slparams);
 

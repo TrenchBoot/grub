@@ -28,6 +28,7 @@
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/mmio.h>
+#include <grub/i386/skinit.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/tpm.h>
 #include <grub/i386/txt.h>
@@ -77,8 +78,12 @@ grub_slaunch_init_slrt_storage (int arch)
   /* Setup DCE and DLME information. */
   slr_dl_info_staging.hdr.tag = GRUB_SLR_ENTRY_DL_INFO;
   slr_dl_info_staging.hdr.size = sizeof(struct grub_slr_entry_dl_info);
+  slr_dl_info_staging.bl_context.bootloader = GRUB_SLR_BOOTLOADER_GRUB;
+  slr_dl_info_staging.bl_context.context = slparams.boot_params_addr;
   slr_dl_info_staging.dce_base = slparams.dce_base;
   slr_dl_info_staging.dce_size = slparams.dce_size;
+  slr_dl_info_staging.dlme_base = slparams.mle_start;
+  slr_dl_info_staging.dlme_size = slparams.mle_size;
   slr_dl_info_staging.dlme_entry = mle_header->entry_point;
 
   slr_log_info_staging.hdr.tag = GRUB_SLR_ENTRY_LOG_INFO;
@@ -152,7 +157,8 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
 		  char *argv[] __attribute__ ((unused)))
 {
   grub_uint32_t manufacturer[3];
-  grub_uint32_t eax;
+  grub_uint32_t eax, ebx, ecx, edx;
+  grub_uint64_t msr_value;
   grub_err_t err;
 
   if (!grub_cpu_is_cpuid_supported ())
@@ -174,6 +180,19 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
 
       slp = SLP_INTEL_TXT;
     }
+  else if (!grub_memcmp (manufacturer, "AuthenticAMD", 12))
+    {
+      grub_cpuid (GRUB_AMD_CPUID_FEATURES, eax, ebx, ecx, edx);
+      if (! (ecx & GRUB_AMD_CPUID_FEATURES_ECX_SVM) )
+        return grub_error (GRUB_ERR_BAD_DEVICE, N_("CPU does not support AMD SVM"));
+
+      /* Check whether SVM feature is disabled in BIOS */
+      msr_value = grub_rdmsr (GRUB_MSR_AMD64_VM_CR);
+      if (msr_value & GRUB_MSR_SVM_VM_CR_SVM_DISABLE)
+        return grub_error (GRUB_ERR_BAD_DEVICE, N_("BIOS has AMD SVM disabled"));
+
+      slp = SLP_AMD_SKINIT;
+    }
   else
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPU is unsupported"));
 
@@ -193,7 +212,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
   if (slp == SLP_NONE)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("secure launch not enabled"));
 
-  if (slp != SLP_INTEL_TXT)
+  if (slp > SLP_AMD_SKINIT)
     return grub_error (GRUB_ERR_BAD_ARGUMENT,
 		       N_("unknown secure launch platform type: %d"), slp);
 
@@ -239,6 +258,14 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 	  goto fail;
 	}
     }
+  else if (slp == SLP_AMD_SKINIT)
+    {
+      if (!grub_skinit_is_slb (slaunch_module, size))
+        {
+          grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("it does not look like SLB"));
+          goto fail;
+        }
+    }
 
   grub_file_close (file);
 
@@ -268,6 +295,10 @@ grub_cmd_slaunch_state (grub_command_t cmd __attribute__ ((unused)),
     {
       grub_printf ("Secure launcher: Intel TXT\n");
       grub_txt_state_show ();
+    }
+  else if (slp == SLP_AMD_SKINIT)
+    {
+      grub_printf ("Secure launcher: AMD SKINIT\n");
     }
   else
     return grub_error (GRUB_ERR_BAD_ARGUMENT,

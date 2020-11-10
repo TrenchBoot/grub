@@ -35,6 +35,64 @@
 /* Offset to area for passing data to SKL. */
 #define SLB_PARAM(slb)    ((const grub_uint16_t *) (slb))[3]
 
+int
+grub_skinit_is_slb (const void *slb_base, grub_uint32_t slb_size)
+{
+  const grub_uint8_t skl_uuid[16] = {
+    0x78, 0xf1, 0x26, 0x8e, 0x04, 0x92, 0x11, 0xe9,
+    0x83, 0x2a, 0xc8, 0x5b, 0x76, 0xc4, 0xcc, 0x02,
+  };
+  /* We need space after SLB to pass SLRT to it. */
+  const grub_ssize_t max_size = GRUB_SKINIT_SLB_SIZE - SLRT_SIZE;
+
+  const grub_uint8_t *uuid;
+
+  if (slb_size > max_size)
+    {
+      grub_dprintf ("slaunch", "SLB is too large: %d > %d\n",
+                    slb_size, max_size);
+      return 0;
+    }
+
+  if (SLB_MEASURED (slb_base) > slb_size)
+    {
+      grub_dprintf ("slaunch", "SLB measured size is too large: %d > %d\n",
+                    SLB_MEASURED (slb_base), slb_size);
+      return 0;
+    }
+
+  if (SLB_ENTRY (slb_base) >= SLB_MEASURED (slb_base))
+    {
+      grub_dprintf ("slaunch", "SLB entry is not measured: %d >= %d\n",
+                    SLB_ENTRY (slb_base), SLB_MEASURED (slb_base));
+      return 0;
+    }
+
+  if (SLB_INFO (slb_base) > SLB_MEASURED (slb_base) - sizeof(skl_uuid))
+    {
+      grub_dprintf ("slaunch", "SLB info is not measured: %d > %d\n",
+                    SLB_INFO (slb_base),
+                    SLB_MEASURED (slb_base) - sizeof(skl_uuid));
+      return 0;
+    }
+
+  if (SLB_PARAM (slb_base) > max_size)
+    {
+      grub_dprintf ("slaunch", "SLB bootloader data offset is too large: %d > %d\n",
+                    SLB_PARAM (slb_base), max_size);
+      return 0;
+    }
+
+  uuid = (const grub_uint8_t *) slb_base + SLB_INFO (slb_base);
+  if (grub_memcmp (uuid, skl_uuid, sizeof(skl_uuid)) != 0)
+    {
+      grub_dprintf ("slaunch", "SLB has unexpected UUID\n");
+      return 0;
+    }
+
+  return 1;
+}
+
 grub_err_t
 grub_skinit_boot_prepare (struct grub_relocator *rel,
                           struct grub_slaunch_params *slparams)
