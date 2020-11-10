@@ -24,6 +24,7 @@
 /* Secure launch platform types. */
 #define SLP_NONE	0
 #define SLP_INTEL_TXT	1
+#define SLP_AMD_SKINIT	2
 
 #define GRUB_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_PAGE_SIZE)
 
