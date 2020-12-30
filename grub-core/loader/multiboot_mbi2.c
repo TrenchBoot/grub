@@ -37,6 +37,7 @@
 #include <grub/net.h>
 #include <grub/lib/cmdline.h>
 #include <grub/i386/memory.h>
+#include <grub/i386/skinit.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
 #include <grub/slr_table.h>
@@ -1187,25 +1188,37 @@ add_multiboot2_slrt_policy_entries (void)
 }
 
 grub_err_t
-grub_multiboot2_prepare_slaunch_txt (grub_uint32_t mbi_target,
-                                     grub_uint32_t mbi_size)
+grub_multiboot2_prepare_slaunch (grub_uint32_t mbi_target,
+                                 grub_uint32_t mbi_size)
 {
   grub_err_t err;
   struct grub_slaunch_params *slparams = grub_slaunch_params ();
+  grub_uint32_t slp = grub_slaunch_platform_type ();
 
-  slparams->slr_table_base = GRUB_SLAUNCH_STORE_IN_OS2MLE;
-  slparams->slr_table_size = GRUB_PAGE_SIZE;
+  slparams->boot_params_addr = mbi_target;
 
-  slparams->slr_table_mem = grub_zalloc (slparams->slr_table_size);
-  if (slparams->slr_table_mem == NULL)
-    return GRUB_ERR_OUT_OF_MEMORY;
-
-  err = grub_txt_boot_prepare (slparams);
-  if (err != GRUB_ERR_NONE)
+  if (slp == SLP_INTEL_TXT)
     {
-      grub_printf ("TXT boot preparation failed");
-      return err;
+      slparams->slr_table_base = GRUB_SLAUNCH_STORE_IN_OS2MLE;
+      slparams->slr_table_size = GRUB_PAGE_SIZE;
+
+      slparams->slr_table_mem = grub_zalloc (slparams->slr_table_size);
+      if (slparams->slr_table_mem == NULL)
+          return GRUB_ERR_OUT_OF_MEMORY;
+
+      err = grub_txt_boot_prepare (slparams);
+      if (err != GRUB_ERR_NONE)
+          return grub_error (err, "TXT boot preparation failed");
     }
+  else if (slp == SLP_AMD_SKINIT)
+    {
+      err = grub_skinit_boot_prepare (grub_multiboot2_relocator, slparams);
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "SKINIT preparations have failed");
+    }
+  else
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+                       N_("Unknown secure launcher platform type: %d\n"), slp);
 
   grub_slaunch_add_slrt_policy_entry (18,
                                       GRUB_SLR_ET_MULTIBOOT2_INFO,
@@ -1214,16 +1227,19 @@ grub_multiboot2_prepare_slaunch_txt (grub_uint32_t mbi_target,
                                       mbi_size,
                                       "Measured MB2 information");
   grub_slaunch_add_slrt_policy_entries ();
-  grub_txt_add_slrt_policy_entries ();
+  if (slp == SLP_INTEL_TXT)
+    grub_txt_add_slrt_policy_entries ();
   add_multiboot2_slrt_policy_entries ();
   grub_slaunch_finish_slr_table ();
 
   grub_dprintf ("multiboot_loader", "slr_table_base = %lx, slr_table_size = %x\n",
                 (unsigned long) slparams->slr_table_base,
                 (unsigned) slparams->slr_table_size);
-  grub_memcpy ((void *)(grub_addr_t) slparams->slr_table_base,
-               slparams->slr_table_mem,
-               slparams->slr_table_size);
+
+  if (slp == SLP_INTEL_TXT)
+    grub_memcpy ((void *)(grub_addr_t) slparams->slr_table_base,
+                 slparams->slr_table_mem,
+                 slparams->slr_table_size);
 
   return GRUB_ERR_NONE;
 }
