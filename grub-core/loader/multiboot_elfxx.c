@@ -111,7 +111,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 		    (long) mld->align, mld->preference, load_size,
 		    mld->avoid_efi_boot_services);
 
-      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      if (grub_slaunch_platform_type () != SLP_NONE)
 	{
 #ifndef GRUB_USE_MULTIBOOT2
 	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
@@ -158,7 +158,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
       grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
 		    (long) mld->load_base_addr, (long) source);
 
-      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      if (grub_slaunch_platform_type () != SLP_NONE)
 	{
 #ifndef GRUB_USE_MULTIBOOT2
 	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
@@ -189,7 +189,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
     {
       mld->load_base_addr = mld->link_base_addr;
       /* TODO: support non-relocatable */
-      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      if (grub_slaunch_platform_type () != SLP_NONE)
         return grub_error (GRUB_ERR_BAD_OS, "Non-relocatable ELF not supported with slaunch");
     }
 
@@ -247,7 +247,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
         }
     }
 
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+  if (grub_slaunch_platform_type () != SLP_NONE)
     {
       slparams->mle_header_offset = 0xffffffff;
 
