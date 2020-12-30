@@ -52,6 +52,7 @@
 #include <grub/i18n.h>
 #if defined (__i386__) || defined (__x86_64__)
 #include <grub/i386/slaunch.h>
+#include <grub/i386/skinit.h>
 #endif
 
 GRUB_MOD_LICENSE ("GPLv3+");
@@ -165,6 +166,68 @@ static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
   state.edi = SLP_NONE;
+
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_platform_type () == SLP_AMD_SKINIT)
+    {
+      static struct grub_slaunch_params slparams;
+      grub_relocator_chunk_t ch;
+      grub_err_t err;
+
+      state.edi = SLP_AMD_SKINIT;
+
+      slparams.boot_params_addr = state.ebx;
+
+      grub_get_drtm_evt_log (&slparams);
+      if (slparams.tpm_evt_log_size == 0)
+	{
+	  err = grub_relocator_alloc_chunk_align (rel, &ch, 0x1000000,
+				  0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
+				  GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+				  GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+
+	  if (err != GRUB_ERR_NONE)
+	    {
+	      grub_error (err, "cannot alloc memory for TPM event log");
+	      return;
+	    }
+
+	  slparams.tpm_evt_log_base = get_physical_target_address (ch);
+	  slparams.tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+	  grub_memset (get_virtual_current_address (ch), 0,
+		       slparams.tpm_evt_log_size);
+	}
+
+      grub_dprintf ("linux", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
+		    (unsigned long) slparams.tpm_evt_log_base,
+		    (unsigned) slparams.tpm_evt_log_size);
+
+      /* Contrary to the TXT, on AMD we do not have vendor-provided blobs in
+       * reserved memory, we are using normal RAM */
+      err = grub_relocator_alloc_chunk_align (rel, &ch,
+					0, (0xffffffff - GRUB_SKINIT_SLB_SIZE),
+					GRUB_SKINIT_SLB_SIZE,
+					GRUB_SKINIT_SLB_ALIGN,
+					GRUB_RELOCATOR_PREFERENCE_LOW, 1);
+
+      if (err != GRUB_ERR_NONE)
+	{
+	  grub_error (err, "cannot alloc memory for SLB");
+	  return;
+	}
+
+      slparams.skl_base = (grub_uint32_t) get_virtual_current_address (ch);
+      slparams.skl_size = grub_skinit_get_sl_size ();
+
+      err = grub_skinit_boot_prepare (&slparams, GRUB_SKINIT_PROTO_MB2);
+
+      if (err != GRUB_ERR_NONE)
+	return;
+
+      state.eax = get_physical_target_address (ch);
+    }
+#endif
 
   grub_relocator32_boot (rel, state, 0);
 }

@@ -36,9 +36,9 @@
 #define SKL_TAG_TAGS_SIZE        0x0F  /* Always first */
 
 /* Tags specifying kernel type */
-#define LZ_TAG_BOOT_CLASS       0x10
-#define LZ_TAG_BOOT_LINUX       0x10
-#define LZ_TAG_BOOT_MB2         0x11
+#define SKL_TAG_BOOT_CLASS       0x10
+#define SKL_TAG_BOOT_LINUX       0x10
+#define SKL_TAG_BOOT_MB2         0x11
 
 /* Tags specific to TPM event log */
 #define SKL_TAG_EVENT_LOG_CLASS  0x20
@@ -91,7 +91,7 @@ static inline void *next_tag(struct skl_tag_tags_size *tags)
 }
 
 grub_err_t
-grub_skinit_boot_prepare (struct grub_slaunch_params *slparams)
+grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
 {
   void *skl_base = (void *)(grub_addr_t) slparams->skl_base;
   grub_memset (skl_base, 0, GRUB_SKINIT_SLB_SIZE);
@@ -130,11 +130,28 @@ grub_skinit_boot_prepare (struct grub_slaunch_params *slparams)
   }
 
   /* Boot protocol data */
-  struct skl_tag_boot_linux *b = next_tag(tags);
-  b->hdr.type = SKL_TAG_BOOT_LINUX;
-  b->hdr.len = sizeof(struct skl_tag_boot_linux);
-  b->zero_page = (grub_uint32_t)slparams->boot_params_addr;
-  tags->size += b->hdr.len;
+  if (pr == GRUB_SKINIT_PROTO_LINUX)
+    {
+      struct skl_tag_boot_linux *b = next_tag(tags);
+      b->hdr.type = SKL_TAG_BOOT_LINUX;
+      b->hdr.len = sizeof(struct skl_tag_boot_linux);
+      b->zero_page = (grub_uint32_t)slparams->boot_params_addr;
+      tags->size += b->hdr.len;
+    }
+  else if (pr == GRUB_SKINIT_PROTO_MB2)
+    {
+      struct skl_tag_boot_mb2 *b = next_tag(tags);
+      b->hdr.type = SKL_TAG_BOOT_MB2;
+      b->hdr.len = sizeof(struct skl_tag_boot_mb2);
+      b->mbi = (grub_uint32_t)slparams->boot_params_addr;
+      /* When 0, SKL will parse image load base from MBI */
+      b->kernel_entry = 0;
+      /* When 0, SKL will parse ELF symbols from MBI */
+      b->kernel_size = 0;
+      tags->size += b->hdr.len;
+    }
+  else
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unknown boot protocol");
 
   if (slparams->tpm_evt_log_size != 0)
     {

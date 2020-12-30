@@ -29,7 +29,11 @@
 
 #include <grub/i386/slaunch.h>
 
-grub_err_t grub_skinit_boot_prepare (struct grub_slaunch_params *slparams);
+#define GRUB_SKINIT_PROTO_LINUX 1
+#define GRUB_SKINIT_PROTO_MB2   2
+
+grub_err_t grub_skinit_boot_prepare (struct grub_slaunch_params *slparams,
+				      grub_uint8_t proto);
 
 static inline grub_uint16_t grub_skinit_get_sl_size (void)
 {
