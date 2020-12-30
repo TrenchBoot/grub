@@ -104,13 +104,15 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 
   if (mld->relocatable)
     {
+#ifndef GRUB_USE_MULTIBOOT2
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#endif
+
       load_size = highest_load - mld->link_base_addr;
 
       if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
         {
-#ifndef GRUB_USE_MULTIBOOT2
-          return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
-#else
           /*
            * We allocate the binary together with the page tables to make one
            * contiguous block for MLE.
@@ -121,7 +123,6 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
           /* Do not go below GRUB_TXT_PMR_ALIGN. */
           if (mld->align < GRUB_TXT_PMR_ALIGN)
             mld->align = GRUB_TXT_PMR_ALIGN;
-#endif
         }
       else
         {
@@ -153,14 +154,14 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
       grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
                     (long) mld->load_base_addr, (long) source);
 
-      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      if (grub_slaunch_platform_type () != SLP_NONE)
         {
-#ifndef GRUB_USE_MULTIBOOT2
-          return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
-#else
           slparams->mle_start = mld->load_base_addr;
           slparams->mle_mem = source;
+        }
 
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+        {
           err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
                                                        GRUB_MEMORY_MACHINE_UPPER_START,
                                                        mld->load_base_addr - slparams->mle_ptab_size,
@@ -177,14 +178,13 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
           grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
                         slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
                         (unsigned) slparams->mle_ptab_size);
-#endif
         }
     }
   else
     {
       mld->load_base_addr = mld->link_base_addr;
       /* TODO: support non-relocatable */
-      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+      if (grub_slaunch_platform_type () != SLP_NONE)
         return grub_error (GRUB_ERR_BAD_OS, "Non-relocatable ELF not supported with slaunch");
     }
 
@@ -242,7 +242,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
         }
     }
 
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+  if (grub_slaunch_platform_type () != SLP_NONE)
     {
       slparams->mle_header_offset = 0xffffffff;
 

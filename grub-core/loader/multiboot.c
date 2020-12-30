@@ -51,6 +51,7 @@
 #include <grub/memory.h>
 #include <grub/i18n.h>
 #if defined (__i386__) || defined (__x86_64__)
+#include <grub/i386/skinit.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
 #endif
@@ -176,6 +177,10 @@ normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
       state.ecx = slparams->dce_size;
       state.edx = 0;
     }
+  else if (state.edi == SLP_AMD_SKINIT)
+    {
+      state.eax = slparams->dce_base;
+    }
 
   grub_relocator32_boot (rel, state, 0);
 }
@@ -206,10 +211,10 @@ grub_multiboot_boot (void)
     return err;
 
 #ifdef GRUB_USE_MULTIBOOT2
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+  if (grub_slaunch_platform_type () != SLP_NONE)
     {
-      err = grub_multiboot2_prepare_slaunch_txt (state.MULTIBOOT_MBI_REGISTER,
-                                                 mbi_size);
+      err = grub_multiboot2_prepare_slaunch (state.MULTIBOOT_MBI_REGISTER,
+                                             mbi_size);
       if (err)
         return err;
     }
