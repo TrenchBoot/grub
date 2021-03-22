@@ -732,12 +732,6 @@ script = {
 
 script = {
   testcase;
-  name = ext234_test;
-  common = tests/ext234_test.in;
-};
-
-script = {
-  testcase;
   name = squashfs_test;
   common = tests/squashfs_test.in;
 };
@@ -764,12 +758,6 @@ script = {
   testcase;
   name = reiserfs_test;
   common = tests/reiserfs_test.in;
-};
-
-script = {
-  testcase;
-  name = fat_test;
-  common = tests/fat_test.in;
 };
 
 script = {
