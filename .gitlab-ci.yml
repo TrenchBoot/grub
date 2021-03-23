@@ -1,4 +1,5 @@
 stages:
+  - git-robot
   - build
 
 build_and_install:
@@ -6,6 +7,9 @@ build_and_install:
   image: debian:stable-20200414
   tags:
     - local
+  timeout: 4h
+  except:
+    - debian-upstream
   before_script:
     - apt update && apt install -y build-essential bison flex python pkg-config autoconf automake git gettext autopoint libfuse-dev libdevmapper-dev libfreetype6-dev
   script:
@@ -19,6 +23,8 @@ build_and_install:
 
 build_nixpkg:
   stage: build
+  except:
+    - debian-upstream
   variables:
     NIXPKG: "grub"
     GRUB_COMMIT: "$CI_COMMIT_SHA"
@@ -27,3 +33,47 @@ build_nixpkg:
     project: trenchboot1/3mdeb/nixos-trenchboot-configs
     branch: master
     strategy: depend
+
+git_pull:
+  image: debian:stable-20200414
+  stage: git-robot
+  tags:
+    - local
+  only:
+    - trenchboot_support_2.04
+  before_script:
+    - echo "machine github.com
+              login 3mdeb-robot
+              password $GITHUB_PERSONAL_ACCESS_TOKEN" >> ~/.netrc
+    - apt update && apt install -y git
+    - git config --global user.email "robot@3mdeb.com"
+    - git config --global user.name "3mdeb-robot"
+  script:
+    - git clone https://github.com/3mdeb/grub.git -b debian-upstream
+    - cd grub
+    - git pull . origin/trenchboot_support_2.04
+    - git push origin debian
+
+# For building debian package vfat and ext234 tests was
+# removed, because of error:
+# "losetup: cannot find an unused loop device"
+
+build_debian_pkg:
+  image: debian:bullseye-20200514
+  stage: build
+  tags:
+    - local
+  timeout: 4h
+  only:
+    - debian-upstream
+  before_script:
+    - ./.gitlab-ci/install-debian-build-deps.sh
+    - ln -s /usr/bin/python3 /usr/bin/python
+    - ./bootstrap
+  script:
+    - dpkg-buildpackage -b -rfakeroot --target-arch i386 -us -uc
+    - mkdir artifacts && mv ../*.deb artifacts/
+    - ./.gitlab-ci/show-package-content.sh
+  artifacts:
+    paths:
+      - artifacts/*
