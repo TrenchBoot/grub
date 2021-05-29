@@ -528,10 +528,14 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   grub_memset (os_mle_data, 0, sizeof (*os_mle_data));
 
   os_mle_data->version = GRUB_SL_OS_MLE_STRUCT_VERSION;
-  os_mle_data->zero_page_addr = (grub_uint32_t)(grub_addr_t) slparams->params;
+  os_mle_data->boot_params_addr = slparams->boot_params_addr;
   os_mle_data->saved_misc_enable_msr = grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
 
   os_mle_data->ap_wake_block = slparams->ap_wake_block;
+  os_mle_data->ap_wake_block_size = slparams->ap_wake_block_size;
+
+  os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
+  os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
 
   save_mtrrs (os_mle_data);
 
