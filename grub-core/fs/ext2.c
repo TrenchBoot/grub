@@ -127,14 +127,22 @@ GRUB_MOD_LICENSE ("GPLv3+");
  * checksum seed:  Not really back-incompatible - was added to allow tools
  *                 such as tune2fs to change the UUID on a mounted metadata
  *                 checksummed filesystem. Safe to ignore for now since the
+<<<<<<< HEAD
  *                 driver doesn't support checksum verification. But it must
  *                 be removed from this list if that support is added later.
  *
+=======
+ *                 driver doesn't support checksum verification. However, it
+ *                 has to be removed from this list if the support is added later.
+>>>>>>> 7fd5feff97c4 (fs/ext2: Ignore checksum seed incompat feature)
  */
 #define EXT2_DRIVER_IGNORED_INCOMPAT ( EXT3_FEATURE_INCOMPAT_RECOVER \
 				     | EXT4_FEATURE_INCOMPAT_MMP \
 				     | EXT4_FEATURE_INCOMPAT_CSUM_SEED)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 7fd5feff97c4 (fs/ext2: Ignore checksum seed incompat feature)
 
 #define EXT3_JOURNAL_MAGIC_NUMBER	0xc03b3998U
 
