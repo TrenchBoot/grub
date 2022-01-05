@@ -1262,7 +1262,18 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   grub_memcpy (linux_cmdline, LINUX_IMAGE, sizeof (LINUX_IMAGE));
   {
     grub_err_t err;
-    err = grub_create_loader_cmdline (argc, argv,
+    const char *slparam = NULL;
+
+    if (argc)
+      {
+        if (!grub_strncmp (SL_PARAM_PREFIX, argv[argc - 1],
+                           grub_strlen (SL_PARAM_PREFIX)))
+          {
+            slparam = argv[argc - 1];
+          }
+      }
+
+    err = grub_create_loader_cmdline ((!slparam ? argc : (argc - 1)), argv,
 				      linux_cmdline
 				      + sizeof (LINUX_IMAGE) - 1,
 				      maximal_cmdline_size
@@ -1270,6 +1281,18 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 				      GRUB_VERIFY_KERNEL_CMDLINE);
     if (err)
       goto fail;
+
+    /* If slparam was removed for cmdline processing, re-add it */
+    if (slparam)
+      {
+        int clen = grub_strlen (linux_cmdline);
+        if ((grub_strlen (slparam) + 1) <
+            (maximal_cmdline_size - clen))
+          {
+            grub_strcpy (linux_cmdline + clen, " ");
+            grub_strcpy (linux_cmdline + clen + 1, slparam);
+          }
+      }
   }
 
   len = prot_file_size;

@@ -27,6 +27,8 @@
 
 #define GRUB_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_PAGE_SIZE)
 
+#define SL_PARAM_PREFIX "securelaunch_entry="
+
 #ifndef ASM_FILE
 
 #include <grub/i386/linux.h>
