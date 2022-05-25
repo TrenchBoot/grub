@@ -58,10 +58,10 @@ struct grub_slaunch_module
 
 struct grub_slaunch_module *grub_slaunch_get_modules (void);
 
-grub_err_t grub_slaunch_boot_txt (struct grub_slaunch_params *slparams);
-grub_err_t grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams);
+grub_err_t grub_slaunch_boot_txt (struct grub_slaunch_params *slparams, grub_uint64_t *unused);
+grub_err_t grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams, grub_uint64_t *old_setup_data);
 grub_err_t grub_slaunch_mb2_boot (struct grub_relocator *rel, struct grub_relocator32_state state);
 
-void grub_linux_slaunch_set (grub_err_t (*sfunc) (struct grub_slaunch_params*));
+void grub_linux_slaunch_set (grub_err_t (*sfunc) (struct grub_slaunch_params*, grub_uint64_t *));
 
 #endif

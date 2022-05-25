@@ -27,9 +27,10 @@
 #include <grub/slaunch.h>
 
 grub_err_t
-grub_slaunch_boot_txt (struct grub_slaunch_params *slparams)
+grub_slaunch_boot_txt (struct grub_slaunch_params *slparams, grub_uint64_t *unused)
 {
   slparams = slparams;
+  unused = unused;
 
   return GRUB_ERR_NONE;
 }

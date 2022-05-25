@@ -124,7 +124,7 @@ get_drtm_acpi_table (void)
 /* Tags with no particular class */
 #define LZ_TAG_NO_CLASS         0x00
 #define LZ_TAG_END              0x00
-#define LZ_TAG_UNAWARE_OS       0x01
+#define LZ_TAG_SETUP_INDIRECT   0x01
 #define LZ_TAG_TAGS_SIZE        0x0F  /* Always first */
 
 /* Tags specifying kernel type */
@@ -171,6 +171,27 @@ struct lz_tag_hash {
   grub_uint8_t digest[];
 } __attribute__ (( packed ));
 
+/* extensible setup indirect data node */
+struct setup_indirect {
+  grub_uint32_t type;
+  grub_uint32_t reserved;  /* Reserved, must be set to zero. */
+  grub_uint64_t len;
+  grub_uint64_t addr;
+} __attribute__ (( packed ));
+
+/* extensible setup data list node */
+struct setup_data {
+  grub_uint64_t next;
+  grub_uint32_t type;
+  grub_uint32_t len;
+  struct setup_indirect indirect;
+} __attribute__ (( packed ));
+
+struct lz_tag_setup_indirect {
+  struct lz_tag_hdr hdr;
+  struct setup_data data;
+} __attribute__ (( packed ));
+
 static inline struct lz_tag_tags_size *get_bootloader_data_addr (
     struct grub_slaunch_module *mod)
 {
@@ -184,18 +205,20 @@ static inline void *next_tag(struct lz_tag_tags_size *tags)
 }
 
 grub_err_t
-grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
+grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams,
+                          grub_uint64_t *old_setup_data)
 {
   if (grub_slaunch_get_modules()) {
+    grub_uint64_t phys_base = grub_slaunch_get_modules()->target;
     struct lz_tag_tags_size *tags = get_bootloader_data_addr(grub_slaunch_get_modules());
     grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
     struct drtm_t *drtm = get_drtm_acpi_table();
 
-    grub_dprintf ("slaunch", "real_mode_target: 0x%x\r\n",
+    grub_printf ("real_mode_target: 0x%x\r\n",
                   slparams->real_mode_target);
-    grub_dprintf ("slaunch", "prot_mode_target: 0x%x\r\n",
+    grub_printf ("prot_mode_target: 0x%x\r\n",
                   slparams->prot_mode_target);
-    grub_dprintf ("slaunch", "params: %p\r\n", slparams->params);
+    grub_printf ("params: %p\r\n", slparams->params);
 
     /* Tags header */
     tags->hdr.type = LZ_TAG_TAGS_SIZE;
@@ -204,7 +227,7 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
 
     /* Hashes of LZ */
     {
-      grub_uint8_t buff[GRUB_MD_SHA256->contextsize];  /* SHA1 ctx is smaller */
+      grub_uint8_t buff[64];  /* SHA1 ctx is smaller */
       struct lz_tag_hash *h = next_tag(tags);
       h->hdr.type = LZ_TAG_LZ_HASH;
       h->hdr.len = sizeof(struct lz_tag_hash) + GRUB_MD_SHA256->mdlen;
@@ -244,24 +267,45 @@ grub_slaunch_boot_skinit (struct grub_slaunch_params *slparams)
       tags->size += e->hdr.len;
     }
 
+    if (1) {
+      grub_printf("%s:%d\n", __func__, __LINE__);
+      struct lz_tag_setup_indirect *i = next_tag(tags);
+      i->hdr.type = LZ_TAG_SETUP_INDIRECT;
+      i->hdr.len = sizeof(struct lz_tag_setup_indirect);
+      grub_printf("%s:%d\n", __func__, __LINE__);
+      i->data.next = *old_setup_data;
+      grub_printf("%s:%d\n", __func__, __LINE__);
+      i->data.type = (1 << 31);
+      i->data.len = sizeof(struct setup_indirect);
+      i->data.indirect.type = (1 << 31) | 7;
+      i->data.indirect.addr = phys_base;
+      i->data.indirect.len = 0x10000;
+      grub_printf("%s:%d\n", __func__, __LINE__);
+      tags->size += i->hdr.len;
+      grub_printf("%s:%d\n", __func__, __LINE__);
+      *old_setup_data = (grub_uint64_t) phys_base + ((grub_addr_t)&i->data - (grub_addr_t)grub_slaunch_get_modules()->addr);
+      grub_printf("%s:%d\n", __func__, __LINE__);
+    }
+
+
     /* Mark end of tags */
     struct lz_tag_hdr *end = next_tag(tags);
     end->type = LZ_TAG_END;
     end->len = sizeof(struct lz_tag_hdr);
     tags->size += end->len;
 
-    grub_dprintf ("slaunch", "broadcasting INIT\r\n");
+    grub_printf ("broadcasting INIT\r\n");
     *apic = 0x000c0500;               // INIT, all excluding self
 
-    grub_dprintf ("slaunch", "grub_tis_init\r\n");
+    grub_printf ("grub_tis_init\r\n");
     grub_tis_init();
-    grub_dprintf ("slaunch", "grub_tis_request_locality\r\n");
+    grub_printf ("grub_tis_request_locality\r\n");
     grub_tis_request_locality(0xff);  // relinquish all localities
 
-    grub_dprintf("slaunch", "Invoke SKINIT\r\n");
+    grub_printf("Invoke SKINIT\r\n");
     return grub_relocator_skinit_boot (slparams->relocator, grub_slaunch_get_modules()->target, 0);
   } else {
-    grub_dprintf("slaunch", "Secure Loader module not loaded, run slaunch_module\r\n");
+    grub_printf("Secure Loader module not loaded, run slaunch_module\r\n");
   }
   return GRUB_ERR_NONE;
 }
@@ -280,7 +324,7 @@ grub_slaunch_mb2_boot (struct grub_relocator *rel, struct grub_relocator32_state
 
   /* Hashes of LZ */
   {
-    grub_uint8_t buff[GRUB_MD_SHA256->contextsize];  /* SHA1 ctx is smaller */
+    grub_uint8_t buff[64];  /* SHA1 ctx is smaller */
     struct lz_tag_hash *h = next_tag(tags);
     h->hdr.type = LZ_TAG_LZ_HASH;
     h->hdr.len = sizeof(struct lz_tag_hash) + GRUB_MD_SHA256->mdlen;
