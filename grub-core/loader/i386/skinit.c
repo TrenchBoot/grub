@@ -32,7 +32,7 @@
 /* Tags with no particular class */
 #define SKL_TAG_NO_CLASS         0x00
 #define SKL_TAG_END              0x00
-#define SKL_TAG_UNAWARE_OS       0x01
+#define SKL_TAG_SETUP_INDIRECT   0x01
 #define SKL_TAG_TAGS_SIZE        0x0F  /* Always first */
 
 /* Tags specifying kernel type */
@@ -78,6 +78,30 @@ struct skl_tag_hash {
   grub_uint16_t algo_id;
   grub_uint8_t digest[];
 } __attribute__ (( packed ));
+
+/* extensible setup indirect data node */
+struct setup_indirect {
+  grub_uint32_t type;
+  grub_uint32_t reserved;  /* Reserved, must be set to zero. */
+  grub_uint64_t len;
+  grub_uint64_t addr;
+} __attribute__ (( packed ));
+
+/* extensible setup data list node */
+struct setup_data {
+  grub_uint64_t next;
+  grub_uint32_t type;
+  grub_uint32_t len;
+  struct setup_indirect indirect;
+} __attribute__ (( packed ));
+
+struct skl_tag_setup_indirect {
+  struct skl_tag_hdr hdr;
+  struct setup_data data;
+} __attribute__ (( packed ));
+
+#define SETUP_INDIRECT           (1 << 31)
+#define SETUP_SECURE_LAUNCH      7
 
 static inline struct skl_tag_tags_size *get_bootloader_data_addr (
           struct grub_slaunch_params *slparams)
@@ -138,6 +162,20 @@ grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
       b->hdr.len = sizeof(struct skl_tag_boot_linux);
       b->zero_page = (grub_uint32_t)slparams->boot_params_addr;
       tags->size += b->hdr.len;
+
+      grub_uint64_t *setup_data = slparams->linux_setup_data;
+      struct skl_tag_setup_indirect *i = next_tag(tags);
+      i->hdr.type = SKL_TAG_SETUP_INDIRECT;
+      i->hdr.len = sizeof(struct skl_tag_setup_indirect);
+      i->data.next = *setup_data;
+      i->data.type = SETUP_INDIRECT;
+      i->data.len = sizeof(struct setup_indirect);
+      i->data.indirect.type = SETUP_INDIRECT | SETUP_SECURE_LAUNCH;
+      i->data.indirect.addr = phys_base;
+      i->data.indirect.len = GRUB_SKINIT_SLB_SIZE;
+      tags->size += i->hdr.len;
+      *setup_data = (grub_uint64_t) phys_base +
+                    ((grub_addr_t) &i->data - (grub_addr_t) skl_base);
     }
   else if (pr == GRUB_SKINIT_PROTO_MB2)
     {
