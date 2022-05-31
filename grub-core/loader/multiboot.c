@@ -217,8 +217,8 @@ normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 	  return;
 	}
 
-      slparams.skl_base = (grub_uint32_t) get_virtual_current_address (ch);
-      slparams.skl_size = grub_skinit_get_sl_size ();
+      slparams.amd.skl_base = get_virtual_current_address (ch);
+      slparams.amd.skl_size = grub_skinit_get_sl_size ();
 
       err = grub_skinit_boot_prepare (&slparams, GRUB_SKINIT_PROTO_MB2);
 

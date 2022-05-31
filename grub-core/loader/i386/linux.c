@@ -174,20 +174,20 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 	  goto fail;
 	}
 
-      slparams.mle_ptab_size = grub_txt_get_mle_ptab_size (prot_size);
-      slparams.mle_ptab_size = ALIGN_UP (slparams.mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+      slparams.intel.mle_ptab_size = grub_txt_get_mle_ptab_size (prot_size);
+      slparams.intel.mle_ptab_size = ALIGN_UP (slparams.intel.mle_ptab_size, GRUB_TXT_PMR_ALIGN);
       /* Do not go below GRUB_TXT_PMR_ALIGN. */
-      preferred_address = (preferred_address > slparams.mle_ptab_size) ?
-			    (preferred_address - slparams.mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
+      preferred_address = (preferred_address > slparams.intel.mle_ptab_size) ?
+			    (preferred_address - slparams.intel.mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
       preferred_address = ALIGN_UP (preferred_address, GRUB_TXT_PMR_ALIGN);
     }
   else
     {
       prot_size = page_align (prot_size);
-      slparams.mle_ptab_size = 0;
+      slparams.intel.mle_ptab_size = 0;
     }
 
-  total_size = prot_size + slparams.mle_ptab_size;
+  total_size = prot_size + slparams.intel.mle_ptab_size;
 
   /* Initialize the memory pointers with NULL for convenience.  */
   free_pages ();
@@ -239,18 +239,18 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 	/* Zero out memory to get stable MLE measurements. */
 	grub_memset (prot_mode_mem, 0, total_size);
 
-	slparams.mle_ptab_mem = prot_mode_mem;
-	slparams.mle_ptab_target = prot_mode_target;
+	slparams.intel.mle_ptab_mem = prot_mode_mem;
+	slparams.intel.mle_ptab_target = prot_mode_target;
 
-	prot_mode_mem = (char *)prot_mode_mem + slparams.mle_ptab_size;
-	prot_mode_target += slparams.mle_ptab_size;
+	prot_mode_mem = (char *)prot_mode_mem + slparams.intel.mle_ptab_size;
+	prot_mode_target += slparams.intel.mle_ptab_size;
 
-	slparams.mle_start = prot_mode_target;
-	slparams.mle_size = prot_size;
+	slparams.intel.mle_start = prot_mode_target;
+	slparams.intel.mle_size = prot_size;
 
 	grub_dprintf ("linux", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
-		      slparams.mle_ptab_mem, (unsigned long) slparams.mle_ptab_target,
-		      (unsigned) slparams.mle_ptab_size);
+		      slparams.intel.mle_ptab_mem, (unsigned long) slparams.intel.mle_ptab_target,
+		      (unsigned) slparams.intel.mle_ptab_size);
 
 	grub_get_drtm_evt_log (&slparams);
 	if (slparams.tpm_evt_log_size == 0)
@@ -717,12 +717,12 @@ grub_linux_boot (void)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      slparams.ap_wake_block = ctx.real_mode_target + ctx.real_size + efi_mmap_size;
-      slparams.ap_wake_block_size = ap_wake_block_size;
+      slparams.intel.ap_wake_block = ctx.real_mode_target + ctx.real_size + efi_mmap_size;
+      slparams.intel.ap_wake_block_size = ap_wake_block_size;
       grub_memset ((void *) ((grub_addr_t) real_mode_mem + ctx.real_size +
 					   efi_mmap_size), 0, ap_wake_block_size);
       grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
-		    (unsigned long) slparams.ap_wake_block,
+		    (unsigned long) slparams.intel.ap_wake_block,
 		    (unsigned long) ap_wake_block_size);
     }
 
@@ -802,15 +802,14 @@ grub_linux_boot (void)
 
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;
-      state.ebx = slparams.sinit_acm_base;
-      state.ecx = slparams.sinit_acm_size;
+      state.ebx = slparams.intel.sinit_acm_base;
+      state.ecx = slparams.intel.sinit_acm_size;
       state.edx = 0;
     }
   else if (state.edi == SLP_AMD_SKINIT)
     {
       grub_relocator_chunk_t ch;
 
-      state.eax = get_physical_target_address (ch);
       slparams.boot_params_addr = ctx.real_mode_target;
 
       /* Contrary to the TXT, on AMD we do not have vendor-provided blobs in
@@ -824,8 +823,10 @@ grub_linux_boot (void)
       if (err != GRUB_ERR_NONE)
 	return err;
 
-      slparams.skl_base = (grub_uint32_t) get_virtual_current_address (ch);
-      slparams.skl_size = grub_skinit_get_sl_size ();
+      state.eax = get_physical_target_address (ch);
+      slparams.amd.skl_base = get_virtual_current_address (ch);
+      slparams.amd.skl_size = grub_skinit_get_sl_size ();
+      slparams.linux_setup_data = &ctx.params->setup_data;
 
       err = grub_skinit_boot_prepare (&slparams, GRUB_SKINIT_PROTO_LINUX);
 
@@ -1078,7 +1079,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 	      goto fail;
 	    }
 
-	  slparams.mle_header_offset = grub_le_to_cpu32 (linux_info->mle_header_offset);
+	  slparams.intel.mle_header_offset = grub_le_to_cpu32 (linux_info->mle_header_offset);
 	}
     }
   else if (grub_slaunch_platform_type () != SLP_NONE)

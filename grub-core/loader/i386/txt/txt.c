@@ -531,8 +531,8 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   os_mle_data->boot_params_addr = slparams->boot_params_addr;
   os_mle_data->saved_misc_enable_msr = grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
 
-  os_mle_data->ap_wake_block = slparams->ap_wake_block;
-  os_mle_data->ap_wake_block_size = slparams->ap_wake_block_size;
+  os_mle_data->ap_wake_block = slparams->intel.ap_wake_block;
+  os_mle_data->ap_wake_block_size = slparams->intel.ap_wake_block_size;
 
   os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
   os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
@@ -572,10 +572,10 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   os_sinit_data->efi_rsdt_ptr = (grub_uint64_t)(grub_addr_t) rsdp;
 #endif
 
-  os_sinit_data->mle_ptab = slparams->mle_ptab_target;
-  os_sinit_data->mle_size = slparams->mle_size;
+  os_sinit_data->mle_ptab = slparams->intel.mle_ptab_target;
+  os_sinit_data->mle_size = slparams->intel.mle_size;
 
-  os_sinit_data->mle_hdr_base = slparams->mle_header_offset;
+  os_sinit_data->mle_hdr_base = slparams->intel.mle_header_offset;
 
   /* TODO: Check low PMR with RMRR. Look at relevant tboot code too. */
   /* TODO: Kernel should not allocate any memory outside of PMRs regions!!! */
@@ -687,11 +687,11 @@ grub_txt_get_mle_ptab_size (grub_uint32_t mle_size)
 void
 grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams)
 {
-  grub_uint8_t *pg_dir, *pg_dir_ptr_tab = slparams->mle_ptab_mem, *pg_tab;
+  grub_uint8_t *pg_dir, *pg_dir_ptr_tab = slparams->intel.mle_ptab_mem, *pg_tab;
   grub_uint32_t mle_off = 0, pd_off = 0;
   grub_uint64_t *pde, *pte;
 
-  grub_memset (pg_dir_ptr_tab, 0, slparams->mle_ptab_size);
+  grub_memset (pg_dir_ptr_tab, 0, slparams->intel.mle_ptab_size);
 
   pg_dir         = pg_dir_ptr_tab + GRUB_PAGE_SIZE;
   pg_tab         = pg_dir + GRUB_PAGE_SIZE;
@@ -707,7 +707,7 @@ grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams)
 
   do
     {
-      *pte = MAKE_PT_MLE_ENTRY(slparams->mle_start + mle_off);
+      *pte = MAKE_PT_MLE_ENTRY(slparams->intel.mle_start + mle_off);
 
       pte++;
       mle_off += GRUB_PAGE_SIZE;
@@ -715,12 +715,12 @@ grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams)
       if (!(++pd_off % 512))
         {
           /* Break if we don't need any additional page entries */
-          if (mle_off >= slparams->mle_size)
+          if (mle_off >= slparams->intel.mle_size)
             break;
           pde++;
           *pde = MAKE_PT_MLE_ENTRY(pte);
         }
-    } while (mle_off < slparams->mle_size);
+    } while (mle_off < slparams->intel.mle_size);
 }
 
 grub_err_t
@@ -867,12 +867,12 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
     return err;
 
   /* Update the MLE header. */
-  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
+  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->intel.mle_start + slparams->intel.mle_header_offset);
   mle_header->first_valid_page = 0;
-  mle_header->mle_end = slparams->mle_size;
+  mle_header->mle_end = slparams->intel.mle_size;
 
-  slparams->sinit_acm_base = (grub_uint32_t)(grub_addr_t) sinit_base;
-  slparams->sinit_acm_size = sinit_base->size * 4;
+  slparams->intel.sinit_acm_base = (grub_uint32_t)(grub_addr_t) sinit_base;
+  slparams->intel.sinit_acm_size = sinit_base->size * 4;
 
   grub_tpm_relinquish_lcl (0);
 

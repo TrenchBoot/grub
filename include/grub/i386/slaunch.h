@@ -33,9 +33,7 @@
 #include <grub/i386/linux.h>
 #include <grub/types.h>
 
-struct grub_slaunch_params
-{
-  grub_uint32_t boot_params_addr;
+struct grub_slaunch_params_intel {
   grub_uint32_t mle_start;
   grub_uint32_t mle_size;
   void *mle_ptab_mem;
@@ -44,16 +42,27 @@ struct grub_slaunch_params
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
-  union {
-    grub_uint32_t sinit_acm_base;
-    grub_uint32_t skl_base;
-  };
-  union {
-    grub_uint32_t sinit_acm_size;
-    grub_uint32_t skl_size;
-  };
+  grub_uint32_t sinit_acm_base;
+  grub_uint32_t sinit_acm_size;
+};
+
+struct grub_slaunch_params_amd {
+  void *skl_base;
+  grub_addr_t skl_phys_base;
+  grub_uint32_t skl_size;
+};
+
+struct grub_slaunch_params
+{
   grub_uint64_t tpm_evt_log_base;
   grub_uint32_t tpm_evt_log_size;
+  grub_uint32_t boot_params_addr;
+  /* Using void to avoid -Werror=address-of-packed-member */
+  void *linux_setup_data;
+  union {
+    struct grub_slaunch_params_intel intel;
+    struct grub_slaunch_params_amd amd;
+  };
 };
 
 void grub_get_drtm_evt_log (struct grub_slaunch_params *slparams);

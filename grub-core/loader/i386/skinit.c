@@ -82,7 +82,7 @@ struct skl_tag_hash {
 static inline struct skl_tag_tags_size *get_bootloader_data_addr (
           struct grub_slaunch_params *slparams)
 {
-  return (struct skl_tag_tags_size *)(slparams->skl_base + slparams->skl_size);
+  return (struct skl_tag_tags_size *)((grub_addr_t)slparams->amd.skl_base + slparams->amd.skl_size);
 }
 
 static inline void *next_tag(struct skl_tag_tags_size *tags)
@@ -93,9 +93,10 @@ static inline void *next_tag(struct skl_tag_tags_size *tags)
 grub_err_t
 grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
 {
-  void *skl_base = (void *)(grub_addr_t) slparams->skl_base;
+  grub_uint64_t phys_base = slparams->amd.skl_phys_base;
+  void *skl_base = (void *)(grub_addr_t) slparams->amd.skl_base;
   grub_memset (skl_base, 0, GRUB_SKINIT_SLB_SIZE);
-  grub_memcpy (skl_base, grub_slaunch_module(), slparams->skl_size);
+  grub_memcpy (skl_base, grub_slaunch_module(), slparams->amd.skl_size);
 
   struct skl_tag_tags_size *tags = get_bootloader_data_addr (slparams);
   grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
@@ -113,7 +114,7 @@ grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
     h->hdr.len = sizeof(struct skl_tag_hash) + GRUB_MD_SHA256->mdlen;
     h->algo_id = 0x000B;
     GRUB_MD_SHA256->init(buff);
-    GRUB_MD_SHA256->write(buff, skl_base, slparams->skl_size);
+    GRUB_MD_SHA256->write(buff, skl_base, slparams->amd.skl_size);
     GRUB_MD_SHA256->final(buff);
     grub_memcpy(h->digest, GRUB_MD_SHA256->read(buff), GRUB_MD_SHA256->mdlen);
     tags->size += h->hdr.len;
@@ -123,7 +124,7 @@ grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
     h->hdr.len = sizeof(struct skl_tag_hash) + GRUB_MD_SHA1->mdlen;
     h->algo_id = 0x0004;
     GRUB_MD_SHA1->init(buff);
-    GRUB_MD_SHA1->write(buff, skl_base, slparams->skl_size);
+    GRUB_MD_SHA1->write(buff, skl_base, slparams->amd.skl_size);
     GRUB_MD_SHA1->final(buff);
     grub_memcpy(h->digest, GRUB_MD_SHA1->read(buff), GRUB_MD_SHA1->mdlen);
     tags->size += h->hdr.len;
