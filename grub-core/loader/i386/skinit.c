@@ -1,0 +1,219 @@
+/*
+ *  GRUB  --  GRand Unified Bootloader
+ *  Copyright (c) 2019 Oracle and/or its affiliates. All rights reserved.
+ *
+ *  GRUB is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  GRUB is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <grub/loader.h>
+#include <grub/memory.h>
+#include <grub/normal.h>
+#include <grub/err.h>
+#include <grub/misc.h>
+#include <grub/types.h>
+#include <grub/dl.h>
+#include <grub/i386/skinit.h>
+#include <grub/i386/tpm.h>
+#include <grub/crypto.h>
+
+#define SKL_TAG_CLASS_MASK       0xF0
+
+/* Tags with no particular class */
+#define SKL_TAG_NO_CLASS         0x00
+#define SKL_TAG_END              0x00
+#define SKL_TAG_SETUP_INDIRECT   0x01
+#define SKL_TAG_TAGS_SIZE        0x0F  /* Always first */
+
+/* Tags specifying kernel type */
+#define SKL_TAG_BOOT_CLASS       0x10
+#define SKL_TAG_BOOT_LINUX       0x10
+#define SKL_TAG_BOOT_MB2         0x11
+
+/* Tags specific to TPM event log */
+#define SKL_TAG_EVENT_LOG_CLASS  0x20
+#define SKL_TAG_EVENT_LOG        0x20
+#define SKL_TAG_SKL_HASH         0x21
+
+struct skl_tag_hdr {
+  grub_uint8_t type;
+  grub_uint8_t len;
+} __attribute__ (( packed ));
+
+struct skl_tag_tags_size {
+  struct skl_tag_hdr hdr;
+  grub_uint16_t size;
+} __attribute__ (( packed ));
+
+struct skl_tag_boot_linux {
+  struct skl_tag_hdr hdr;
+  grub_uint32_t zero_page;
+} __attribute__ (( packed ));
+
+struct skl_tag_boot_mb2 {
+  struct skl_tag_hdr hdr;
+  grub_uint32_t mbi;
+  grub_uint32_t kernel_entry;
+  grub_uint32_t kernel_size;
+} __attribute__ (( packed ));
+
+struct skl_tag_evtlog {
+  struct skl_tag_hdr hdr;
+  grub_uint32_t address;
+  grub_uint32_t size;
+} __attribute__ (( packed ));
+
+struct skl_tag_hash {
+  struct skl_tag_hdr hdr;
+  grub_uint16_t algo_id;
+  grub_uint8_t digest[];
+} __attribute__ (( packed ));
+
+/* extensible setup indirect data node */
+struct setup_indirect {
+  grub_uint32_t type;
+  grub_uint32_t reserved;  /* Reserved, must be set to zero. */
+  grub_uint64_t len;
+  grub_uint64_t addr;
+} __attribute__ (( packed ));
+
+/* extensible setup data list node */
+struct setup_data {
+  grub_uint64_t next;
+  grub_uint32_t type;
+  grub_uint32_t len;
+  struct setup_indirect indirect;
+} __attribute__ (( packed ));
+
+struct skl_tag_setup_indirect {
+  struct skl_tag_hdr hdr;
+  struct setup_data data;
+} __attribute__ (( packed ));
+
+#define SETUP_INDIRECT           (1 << 31)
+#define SETUP_SECURE_LAUNCH      7
+
+static inline struct skl_tag_tags_size *get_bootloader_data_addr (
+          struct grub_slaunch_params *slparams)
+{
+  return (struct skl_tag_tags_size *)((grub_addr_t)slparams->amd.skl_base + slparams->amd.skl_size);
+}
+
+static inline void *next_tag(struct skl_tag_tags_size *tags)
+{
+  return (void *)(((grub_uint8_t *)tags) + tags->size);
+}
+
+grub_err_t
+grub_skinit_boot_prepare (struct grub_slaunch_params *slparams, grub_uint8_t pr)
+{
+  grub_uint64_t phys_base = slparams->amd.skl_phys_base;
+  void *skl_base = (void *)(grub_addr_t) slparams->amd.skl_base;
+  grub_memset (skl_base, 0, GRUB_SKINIT_SLB_SIZE);
+  grub_memcpy (skl_base, grub_slaunch_module(), slparams->amd.skl_size);
+
+  struct skl_tag_tags_size *tags = get_bootloader_data_addr (slparams);
+  grub_uint32_t *apic = (grub_uint32_t *)0xfee00300ULL;
+
+  /* Tags header */
+  tags->hdr.type = SKL_TAG_TAGS_SIZE;
+  tags->hdr.len = sizeof(struct skl_tag_tags_size);
+  tags->size = sizeof(struct skl_tag_tags_size);
+
+  /* Hashes of LZ */
+  {
+    grub_uint8_t buff[GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE];
+    struct skl_tag_hash *h = next_tag(tags);
+    h->hdr.type = SKL_TAG_SKL_HASH;
+    h->hdr.len = sizeof(struct skl_tag_hash) + GRUB_MD_SHA256->mdlen;
+    h->algo_id = 0x000B;
+    GRUB_MD_SHA256->init(buff);
+    GRUB_MD_SHA256->write(buff, skl_base, slparams->amd.skl_size);
+    GRUB_MD_SHA256->final(buff);
+    grub_memcpy(h->digest, GRUB_MD_SHA256->read(buff), GRUB_MD_SHA256->mdlen);
+    tags->size += h->hdr.len;
+
+    h = next_tag(tags);
+    h->hdr.type = SKL_TAG_SKL_HASH;
+    h->hdr.len = sizeof(struct skl_tag_hash) + GRUB_MD_SHA1->mdlen;
+    h->algo_id = 0x0004;
+    GRUB_MD_SHA1->init(buff);
+    GRUB_MD_SHA1->write(buff, skl_base, slparams->amd.skl_size);
+    GRUB_MD_SHA1->final(buff);
+    grub_memcpy(h->digest, GRUB_MD_SHA1->read(buff), GRUB_MD_SHA1->mdlen);
+    tags->size += h->hdr.len;
+  }
+
+  /* Boot protocol data */
+  if (pr == GRUB_SKINIT_PROTO_LINUX)
+    {
+      struct skl_tag_boot_linux *b = next_tag(tags);
+      b->hdr.type = SKL_TAG_BOOT_LINUX;
+      b->hdr.len = sizeof(struct skl_tag_boot_linux);
+      b->zero_page = (grub_uint32_t)slparams->boot_params_addr;
+      tags->size += b->hdr.len;
+
+      grub_uint64_t *setup_data = slparams->linux_setup_data;
+      struct skl_tag_setup_indirect *i = next_tag(tags);
+      i->hdr.type = SKL_TAG_SETUP_INDIRECT;
+      i->hdr.len = sizeof(struct skl_tag_setup_indirect);
+      i->data.next = *setup_data;
+      i->data.type = SETUP_INDIRECT;
+      i->data.len = sizeof(struct setup_indirect);
+      i->data.indirect.type = SETUP_INDIRECT | SETUP_SECURE_LAUNCH;
+      i->data.indirect.addr = phys_base;
+      i->data.indirect.len = GRUB_SKINIT_SLB_SIZE;
+      tags->size += i->hdr.len;
+      *setup_data = (grub_uint64_t) phys_base +
+                    ((grub_addr_t) &i->data - (grub_addr_t) skl_base);
+    }
+  else if (pr == GRUB_SKINIT_PROTO_MB2)
+    {
+      struct skl_tag_boot_mb2 *b = next_tag(tags);
+      b->hdr.type = SKL_TAG_BOOT_MB2;
+      b->hdr.len = sizeof(struct skl_tag_boot_mb2);
+      b->mbi = (grub_uint32_t)slparams->boot_params_addr;
+      /* When 0, SKL will parse image load base from MBI */
+      b->kernel_entry = 0;
+      /* When 0, SKL will parse ELF symbols from MBI */
+      b->kernel_size = 0;
+      tags->size += b->hdr.len;
+    }
+  else
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unknown boot protocol");
+
+  if (slparams->tpm_evt_log_size != 0)
+    {
+      struct skl_tag_evtlog *e = next_tag(tags);
+      e->hdr.type = SKL_TAG_EVENT_LOG;
+      e->hdr.len = sizeof(struct skl_tag_evtlog);
+      e->address = slparams->tpm_evt_log_base;
+      e->size = slparams->tpm_evt_log_size;
+      tags->size += e->hdr.len;
+    }
+
+  /* Mark end of tags */
+  struct skl_tag_hdr *end = next_tag(tags);
+  end->type = SKL_TAG_END;
+  end->len = sizeof(struct skl_tag_hdr);
+  tags->size += end->len;
+
+  grub_dprintf ("slaunch", "broadcasting INIT\r\n");
+  *apic = 0x000c0500;               // INIT, all excluding self
+  grub_dprintf ("slaunch", "grub_tpm_relinquish_lcl\r\n");
+  grub_tpm_relinquish_lcl (0);
+
+  grub_dprintf("slaunch", "Invoke SKINIT\r\n");
+
+  return GRUB_ERR_NONE;
+}

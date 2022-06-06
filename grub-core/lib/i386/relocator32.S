@@ -115,6 +115,9 @@ VARIABLE(grub_relocator32_edx)
 	cmpl	$SLP_INTEL_TXT, %edi
 	je	LOCAL(intel_txt)
 
+	cmpl	$SLP_AMD_SKINIT, %edi
+	je	LOCAL(amd_skinit)
+
 	.byte	0xea
 VARIABLE(grub_relocator32_eip)
 	.long	0
@@ -122,6 +125,9 @@ VARIABLE(grub_relocator32_eip)
 
 LOCAL(intel_txt):
 	getsec
+
+LOCAL(amd_skinit):
+	skinit
 
 	/* GDT. Copied from loader/i386/linux.c. */
 	.p2align	4
