@@ -824,6 +824,7 @@ grub_linux_boot (void)
 	return err;
 
       state.eax = get_physical_target_address (ch);
+      slparams.amd.skl_phys_base = state.eax;
       slparams.amd.skl_base = get_virtual_current_address (ch);
       slparams.amd.skl_size = grub_skinit_get_sl_size ();
       slparams.linux_setup_data = &ctx.params->setup_data;
