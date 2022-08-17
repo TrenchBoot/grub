@@ -1879,6 +1879,15 @@ module = {
 };
 
 module = {
+  name = slaunch;
+  x86 = loader/i386/slaunch.c;
+  x86 = loader/i386/txt/txt.c;
+  x86 = loader/i386/txt/acmod.c;
+  x86 = loader/i386/txt/verify.c;
+  enable = x86;
+};
+
+module = {
   name = fdt;
   efi = loader/efi/fdt.c;
   enable = fdt;
@@ -2571,6 +2580,12 @@ module = {
 module = {
   name = testspeed;
   common = commands/testspeed.c;
+};
+
+module = {
+  name = tpm;
+  x86 = commands/i386/tpm.c;
+  enable = x86;
 };
 
 module = {

@@ -159,6 +159,17 @@ struct linux_i386_kernel_header
   grub_uint64_t pref_address;
   grub_uint32_t init_size;
   grub_uint32_t handover_offset;
+  grub_uint32_t kernel_info_offset;
+} GRUB_PACKED;
+
+struct linux_kernel_info
+{
+  grub_uint32_t header;
+  grub_uint32_t size;
+  grub_uint32_t size_total;
+  grub_uint32_t setup_type_max;
+  grub_uint32_t mle_header_offset;
+  grub_uint8_t  var_len_data[0];
 } GRUB_PACKED;
 
 /* Boot parameters for Linux based on 2.6.12. This is used by the setup
@@ -340,9 +351,10 @@ struct linux_kernel_params
   grub_uint64_t pref_address;
   grub_uint32_t init_size;
   grub_uint32_t handover_offset;
+  grub_uint32_t kernel_info_offset;
   /* Linux setup header copy - END. */
 
-  grub_uint8_t _pad7[40];
+  grub_uint8_t _pad7[36];
   grub_uint32_t edd_mbr_sig_buffer[EDD_MBR_SIG_MAX];	/* 290 */
   struct grub_e820_mmap e820_map[(0x400 - 0x2d0) / 20];	/* 2d0 */
 } GRUB_PACKED;

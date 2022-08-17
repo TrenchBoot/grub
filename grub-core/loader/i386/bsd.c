@@ -21,6 +21,10 @@
 #include <grub/i386/cpuid.h>
 #include <grub/memory.h>
 #include <grub/i386/memory.h>
+#if 0
+#include <grub/i386/slaunch.h>
+#endif
+#define SLP_NONE 0
 #include <grub/file.h>
 #include <grub/err.h>
 #include <grub/dl.h>
@@ -793,6 +797,7 @@ grub_freebsd_boot (void)
 #endif
 
       grub_memcpy (&stack[9], &bi, sizeof (bi));
+      state.edi = SLP_NONE;
       state.eip = entry;
       state.esp = stack_target;
       state.ebp = stack_target;
@@ -908,6 +913,7 @@ grub_openbsd_boot (void)
     return err;
 #endif
 
+  state.edi = SLP_NONE;
   state.eip = entry;
   state.ebp = state.esp
     = ((grub_uint8_t *) stack - (grub_uint8_t *) buf0) + buf_target;
@@ -1230,6 +1236,7 @@ grub_netbsd_boot (void)
     return err;
 #endif
 
+  state.edi = SLP_NONE;
   state.eip = entry;
   state.esp = stack_target;
   state.ebp = stack_target;

@@ -130,6 +130,9 @@ enum grub_file_type
 
     GRUB_FILE_TYPE_VERIFY_SIGNATURE,
 
+    /* Secure Launch module.  */
+    GRUB_FILE_TYPE_SLAUNCH_MODULE,
+
     GRUB_FILE_TYPE_MASK = 0xffff,
 
     /* --skip-sig is specified.  */
