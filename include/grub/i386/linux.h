@@ -240,8 +240,11 @@ struct linux_kernel_params
   grub_uint32_t ofw_num_items;		/* b4 */
   grub_uint32_t ofw_cif_handler;	/* b8 */
   grub_uint32_t ofw_idt;		/* bc */
+  grub_uint32_t ext_ramdisk_image;	/* c0 */
+  grub_uint32_t ext_ramdisk_size;	/* c4 */
+  grub_uint32_t ext_cmd_line_ptr;	/* c8 */
 
-  grub_uint8_t padding7[0x1b8 - 0xc0];
+  grub_uint8_t padding7[0x1b8 - 0xcc];
 
   union
     {
