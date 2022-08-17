@@ -343,6 +343,70 @@ grub_mmap_unregister (int handle)
 
 #endif /* ! GRUB_MMAP_REGISTER_BY_FIRMWARE */
 
+typedef struct
+{
+  grub_uint64_t addr;
+  grub_uint64_t limit;
+} addr_limit_t;
+
+/* Helper for grub_mmap_get_lowest().  */
+static int
+lowest_hook (grub_uint64_t addr, grub_uint64_t size, grub_memory_type_t type,
+	     void *data)
+{
+  addr_limit_t *al = data;
+
+  if (type != GRUB_MEMORY_AVAILABLE)
+    return 0;
+
+  if (addr >= al->limit)
+    al->addr = grub_min (al->addr, addr);
+
+  if ((addr < al->limit) && ((addr + size) > al->limit))
+    al->addr = al->limit;
+
+  return 0;
+}
+
+grub_uint64_t
+grub_mmap_get_lowest (grub_uint64_t limit)
+{
+  addr_limit_t al = {~0, limit};
+
+  grub_mmap_iterate (lowest_hook, &al);
+
+  return al.addr;
+}
+
+/* Helper for grub_mmap_get_highest().  */
+static int
+highest_hook (grub_uint64_t addr, grub_uint64_t size, grub_memory_type_t type,
+	      void *data)
+{
+  addr_limit_t *al = data;
+
+  if (type != GRUB_MEMORY_AVAILABLE)
+    return 0;
+
+  if ((addr + size) < al->limit)
+    al->addr = grub_max (al->addr, addr + size);
+
+  if ((addr < al->limit) && ((addr + size) >= al->limit))
+    al->addr = al->limit;
+
+  return 0;
+}
+
+grub_uint64_t
+grub_mmap_get_highest (grub_uint64_t limit)
+{
+  addr_limit_t al = {0, limit};
+
+  grub_mmap_iterate (highest_hook, &al);
+
+  return al.addr;
+}
+
 #define CHUNK_SIZE	0x400
 
 struct badram_entry {

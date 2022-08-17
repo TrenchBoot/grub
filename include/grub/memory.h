@@ -69,6 +69,9 @@ void *grub_mmap_malign_and_register (grub_uint64_t align, grub_uint64_t size,
 
 void grub_mmap_free_and_unregister (int handle);
 
+extern grub_uint64_t grub_mmap_get_lowest (grub_uint64_t limit);
+extern grub_uint64_t grub_mmap_get_highest (grub_uint64_t limit);
+
 #ifndef GRUB_MMAP_REGISTER_BY_FIRMWARE
 
 struct grub_mmap_region
