@@ -24,6 +24,8 @@
 
 #include "relocator_common.S"
 
+#include <grub/slaunch.h>
+
 	.p2align	4	/* force 16-byte alignment */
 
 VARIABLE(grub_relocator32_start)
@@ -110,10 +112,16 @@ VARIABLE(grub_relocator32_edx)
 	   payload and makes this implementation easier.  */
 	cld
 
+	cmpl	$SLP_INTEL_TXT, %edi
+	je	LOCAL(intel_txt)
+
 	.byte	0xea
 VARIABLE(grub_relocator32_eip)
 	.long	0
 	.word	CODE_SEGMENT
+
+LOCAL(intel_txt):
+	getsec
 
 	/* GDT. Copied from loader/i386/linux.c. */
 	.p2align	4
