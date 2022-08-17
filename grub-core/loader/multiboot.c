@@ -50,6 +50,10 @@
 #include <grub/video.h>
 #include <grub/memory.h>
 #include <grub/i18n.h>
+#include <grub/efi/sb.h>
+#if defined (__i386__) || defined (__x86_64__)
+#include <grub/slaunch.h>
+#endif
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -161,6 +165,8 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
+  state.edi = SLP_NONE;
+
   grub_relocator32_boot (rel, state, 0);
 }
 #else
