@@ -278,7 +278,7 @@ grub_txt_verify_platform (void)
   bios_data = grub_txt_bios_data_start (txt_heap);
 
   /* Check version */
-  if ( bios_data->version < 5 )
+  if ( bios_data->version < 3 )
      return grub_error (GRUB_ERR_OUT_OF_RANGE,
                  N_("unsupported BIOS data version (%d)"), bios_data->version);
 

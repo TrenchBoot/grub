@@ -627,8 +627,15 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 	(struct grub_txt_heap_event_log_pointer2_1_element *) os_sinit_data->ext_data_elts;
       heap_event_log_pointer2_1_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_EVENT_LOG_POINTER2_1;
       heap_event_log_pointer2_1_element->size = sizeof (*heap_event_log_pointer2_1_element);
+
+      /* FIXME: First option is correct way to do!!! */
+#if 0
       heap_event_log_pointer2_1_element->phys_addr = slparams->tpm_evt_log_base;
       heap_event_log_pointer2_1_element->allocated_event_container_size = slparams->tpm_evt_log_size;
+#else
+      heap_event_log_pointer2_1_element->phys_addr = (grub_addr_t) &os_mle_data->event_log_buffer;
+      heap_event_log_pointer2_1_element->allocated_event_container_size = sizeof (os_mle_data->event_log_buffer);
+#endif
 
       heap_end_element = (struct grub_txt_heap_end_element *)
 	((grub_addr_t) heap_event_log_pointer2_1_element + heap_event_log_pointer2_1_element->size);
