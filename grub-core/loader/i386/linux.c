@@ -34,6 +34,7 @@
 #include <grub/i386/relocator.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
+#include <grub/i386/skinit.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
 #include <grub/linux.h>
@@ -250,7 +251,7 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
     prot_mode_mem = get_virtual_current_address (ch);
     prot_mode_target = get_physical_target_address (ch);
 
-    if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    if (grub_slaunch_platform_type () != SLP_NONE)
       {
         /* Zero out memory to get stable MLE measurements. */
         grub_memset (prot_mode_mem, 0, total_size);
@@ -269,22 +270,29 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
                       slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
                       (unsigned) slparams->mle_ptab_size);
 
-        err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
-                                                0xffffffff - GRUB_PAGE_SIZE,
-                                                GRUB_PAGE_SIZE, GRUB_PAGE_SIZE,
-                                                GRUB_RELOCATOR_PREFERENCE_NONE, 1);
-        if (err)
-            goto fail;
+        /*
+         * For AMD SKINIT, SLRT is part of SLB and it will be initialized by
+         * grub_skinit_boot_prepare().
+         */
+        if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+          {
+            err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                                    0xffffffff - GRUB_PAGE_SIZE,
+                                                    GRUB_PAGE_SIZE, GRUB_PAGE_SIZE,
+                                                    GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+            if (err)
+                goto fail;
 
-        slparams->slr_table_base = get_physical_target_address (ch);
-        slparams->slr_table_size = GRUB_PAGE_SIZE;
-        slparams->slr_table_mem = get_virtual_current_address (ch);
+            slparams->slr_table_base = get_physical_target_address (ch);
+            slparams->slr_table_size = GRUB_PAGE_SIZE;
+            slparams->slr_table_mem = get_virtual_current_address (ch);
 
-        grub_memset (slparams->slr_table_mem, 0, slparams->slr_table_size);
+            grub_memset (slparams->slr_table_mem, 0, slparams->slr_table_size);
 
-        grub_dprintf ("linux", "slr_table_base = %lx, slr_table_size = %x\n",
-                      (unsigned long) slparams->slr_table_base,
-                      (unsigned) slparams->slr_table_size);
+            grub_dprintf ("linux", "slr_table_base = %lx, slr_table_size = %x\n",
+                          (unsigned long) slparams->slr_table_base,
+                          (unsigned) slparams->slr_table_size);
+          }
 
         err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
                                                 0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
@@ -836,6 +844,21 @@ grub_linux_boot (void)
       state.ebx = slparams->dce_base;
       state.ecx = slparams->dce_size;
       state.edx = 0;
+    }
+  else if (state.edi == SLP_AMD_SKINIT)
+    {
+      slparams->boot_params_addr = ctx.real_mode_target;
+
+      err = grub_skinit_boot_prepare (relocator, slparams);
+
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "SKINIT preparations have failed");
+
+      grub_slaunch_add_slrt_policy_entries ();
+      grub_linux_setup_slr_table (slparams);
+      grub_slaunch_finish_slr_table ();
+
+      state.eax = slparams->dce_base;
     }
   else
     {
