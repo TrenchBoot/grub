@@ -16,8 +16,37 @@
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef GRUB_RDMSR_H
-#define GRUB_RDMSR_H 1
+#ifndef GRUB_I386_MSR_H
+#define GRUB_I386_MSR_H 1
+
+#include <grub/err.h>
+#include <grub/i386/cpuid.h>
+#include <grub/types.h>
+
+static inline grub_err_t
+grub_cpu_is_msr_supported (void)
+{
+  grub_uint32_t eax, ebx, ecx, edx;
+
+  /*
+   * The CPUID instruction should be used to determine whether MSRs
+   * are supported, CPUID.01H:EDX[5] = 1.
+   */
+  if (!grub_cpu_is_cpuid_supported ())
+    return GRUB_ERR_BAD_DEVICE;
+
+  grub_cpuid (0, eax, ebx, ecx, edx);
+
+  if (eax < 1)
+    return GRUB_ERR_BAD_DEVICE;
+
+  grub_cpuid (1, eax, ebx, ecx, edx);
+
+  if (!(edx & (1 << 5)))
+    return GRUB_ERR_BAD_DEVICE;
+
+  return GRUB_ERR_NONE;
+}
 
 /*
  * TODO: Add a general protection exception handler.
@@ -25,13 +54,21 @@
  */
 
 static inline grub_uint64_t
-grub_msr_read (grub_uint32_t msr_id)
+grub_rdmsr (grub_uint32_t msr_id)
 {
   grub_uint32_t low, high;
 
   asm volatile ("rdmsr" : "=a" (low), "=d" (high) : "c" (msr_id));
 
-  return ((grub_uint64_t)high << 32) | low;
+  return ((grub_uint64_t) high << 32) | low;
 }
 
-#endif /* GRUB_RDMSR_H */
+static inline void
+grub_wrmsr (grub_uint32_t msr_id, grub_uint64_t msr_value)
+{
+  grub_uint32_t low = msr_value, high = msr_value >> 32;
+
+  asm volatile ("wrmsr" : : "c" (msr_id), "a" (low), "d" (high));
+}
+
+#endif /* GRUB_I386_MSR_H */
