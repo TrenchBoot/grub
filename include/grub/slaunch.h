@@ -33,6 +33,9 @@
 #define GRUB_SL_BOOT_TYPE_LINUX		1
 #define GRUB_SL_BOOT_TYPE_EFI		2
 
+#define GRUB_KERNEL_INFO_HEADER		"LToP"
+#define GRUB_KERNEL_INFO_MIN_SIZE_TOTAL	12
+
 struct linux_kernel_params;
 struct linux_i386_kernel_header;
 struct grub_relocator;
@@ -87,6 +90,19 @@ void grub_setup_slrt_log_info (struct grub_slaunch_params *slparams);
 void grub_setup_slr_table (struct grub_slaunch_params *slparams,
                            struct grub_slr_entry_hdr *platform_info);
 void grub_update_slrt_policy (struct grub_slaunch_params *slparams);
+
+/* Linux i386 functions */
+grub_err_t grub_sl_find_kernel_info (struct grub_slaunch_params *slparams,
+                                     grub_file_t kernel_file,
+                                     struct linux_i386_kernel_header *lh,
+                                     grub_size_t real_size);
+grub_err_t grub_sl_txt_prepare_mle_ptab (struct grub_slaunch_params *slparams,
+                                         grub_size_t *prot_size,
+                                         grub_uint64_t *preferred_address);
+grub_err_t grub_sl_txt_setup_linux (struct grub_slaunch_params *slparams,
+                                    struct grub_relocator *relocator,
+                                    grub_size_t total_size, grub_size_t prot_size,
+                                    void **prot_mode_mem, grub_addr_t *prot_mode_target);
 
 #endif /* ASM_FILE */
 

@@ -161,6 +161,8 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
+  state.edi = 0; /* Secure Launch not in progress */
+
   grub_relocator32_boot (rel, state, 0);
 }
 #else
