@@ -22,6 +22,7 @@
 #define GRUB_TXT_H 1
 
 #include <grub/err.h>
+#include <grub/tpm.h>
 #include <grub/types.h>
 #include <grub/i386/memory.h>
 #include <grub/i386/mmio.h>
@@ -679,6 +680,34 @@ struct grub_smx_parameters
   grub_uint32_t txt_feature_ext_flags;
 } GRUB_PACKED;
 
+/* Structures and constants used for TPM 1.2 event log initialization */
+struct tpm12_pcr_event {
+    grub_uint32_t pcr_index;
+    grub_uint32_t type;
+    grub_uint8_t digest[SHA1_DIGEST_SIZE];
+    grub_uint32_t data_size;
+    grub_uint8_t data[];
+} GRUB_PACKED;
+
+#define EVTLOG_SIGNATURE "TXT Event Container"
+#define EVTLOG_CNTNR_MAJOR_VER 1
+#define EVTLOG_CNTNR_MINOR_VER 0
+#define EVTLOG_EVT_MAJOR_VER 1
+#define EVTLOG_EVT_MINOR_VER 0
+
+struct event_log_container {
+    grub_uint8_t signature[20];
+    grub_uint8_t reserved[12];
+    grub_uint8_t container_ver_major;
+    grub_uint8_t container_ver_minor;
+    grub_uint8_t pcr_event_ver_major;
+    grub_uint8_t pcr_event_ver_minor;
+    grub_uint32_t size;
+    grub_uint32_t pcr_events_offset;
+    grub_uint32_t next_event_offset;
+    struct tpm12_pcr_event pcr_events[];
+} GRUB_PACKED;
+
 extern grub_uint32_t grub_txt_supported_os_sinit_data_ver (struct grub_txt_acm_header* hdr);
 
 extern grub_uint32_t grub_txt_get_sinit_capabilities (struct grub_txt_acm_header* hdr);
@@ -691,6 +720,8 @@ extern struct grub_txt_acm_header* grub_txt_sinit_select (struct grub_txt_acm_he
 
 extern grub_err_t grub_txt_verify_platform (void);
 extern grub_err_t grub_txt_prepare_cpu (void);
+
+extern void grub_txt_init_tpm_event_log(void *buf, grub_size_t size);
 
 extern grub_uint32_t grub_txt_get_mle_ptab_size (grub_uint32_t mle_size);
 extern void grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams);
