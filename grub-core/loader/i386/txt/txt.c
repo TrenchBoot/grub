@@ -511,6 +511,32 @@ set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
   return GRUB_ERR_NONE;
 }
 
+void
+grub_txt_init_tpm_event_log (void *buf, grub_size_t size)
+{
+  struct event_log_container *elog;
+
+  if (buf == NULL || size == 0)
+    return;
+
+  /* For TPM2 just clear the area, only TPM12 requires initialization. */
+  grub_memset (buf, 0, size);
+
+  if (grub_get_tpm_ver () != GRUB_TPM_12)
+    return;
+
+  elog = (struct event_log_container *) buf;
+
+  grub_memcpy((void *)elog->signature, EVTLOG_SIGNATURE, sizeof(elog->signature));
+  elog->container_ver_major = EVTLOG_CNTNR_MAJOR_VER;
+  elog->container_ver_minor = EVTLOG_CNTNR_MINOR_VER;
+  elog->pcr_event_ver_major = EVTLOG_EVT_MAJOR_VER;
+  elog->pcr_event_ver_minor = EVTLOG_EVT_MINOR_VER;
+  elog->size = size;
+  elog->pcr_events_offset = sizeof(*elog);
+  elog->next_event_offset = sizeof(*elog);
+}
+
 static grub_err_t
 init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header *sinit)
 {
@@ -520,6 +546,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   struct grub_txt_os_mle_data *os_mle_data;
   struct grub_txt_os_sinit_data *os_sinit_data;
   struct grub_txt_heap_end_element *heap_end_element;
+  struct grub_txt_heap_tpm_event_log_element *heap_tpm_event_log_element;
   struct grub_txt_heap_event_log_pointer2_1_element *heap_event_log_pointer2_1_element;
 #ifdef GRUB_MACHINE_EFI
   struct grub_acpi_rsdp_v20 *rsdp;
@@ -613,9 +640,30 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   sinit_caps = grub_txt_get_sinit_capabilities (sinit);
 
-  /* CBnT bits 5:4 must be 11b, since D/A mapping is the only one supported. */
+  grub_dprintf ("slaunch", "SINIT capabilities %08x\n", sinit_caps);
+
   os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE |
 				GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
+
+  if (grub_get_tpm_ver () == GRUB_TPM_20)
+    {
+      /* CBnT bits 5:4 must be 11b, since D/A mapping is the only one supported. */
+      if ((sinit_caps & os_sinit_data->capabilities) != os_sinit_data->capabilities)
+        return grub_error (GRUB_ERR_BAD_ARGUMENT,
+               N_("Details/authorities PCR usage is not supported"));
+    }
+  else
+    {
+      if (!(sinit_caps & GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE))
+	{
+	  grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
+	  if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+	    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		N_("Not a single PCR usage available in SINIT capabilities"));
+
+	  os_sinit_data->capabilities = 0;
+	}
+    }
 
   /* Choose monitor RLP wakeup mechanism first. */
   if (sinit_caps & GRUB_TXT_CAPS_MONITOR_SUPPORT)
@@ -629,10 +677,27 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
     os_sinit_data->capabilities |= GRUB_TXT_CAPS_ECX_PT_SUPPORT;
 
   if (grub_get_tpm_ver () == GRUB_TPM_12)
-    return grub_error (GRUB_ERR_NOT_IMPLEMENTED_YET,
-		       N_("TPM 1.2 detected, but not implemented yet"));
+    {
+      grub_dprintf ("slaunch", "TPM 1.2 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
+      os_sinit_data->flags = GRUB_TXT_PCR_EXT_MAX_PERF_POLICY;
+      os_sinit_data->version = OS_SINIT_DATA_TPM_12_VER;
+
+      heap_tpm_event_log_element = (struct grub_txt_heap_tpm_event_log_element *)
+                                   os_sinit_data->ext_data_elts;
+      heap_tpm_event_log_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_TPM_EVENT_LOG_PTR;
+      heap_tpm_event_log_element->size = sizeof (*heap_tpm_event_log_element);
+      heap_tpm_event_log_element->event_log_phys_addr = slparams->tpm_evt_log_base;
+
+      heap_end_element = (struct grub_txt_heap_end_element *)
+  ((grub_addr_t) heap_tpm_event_log_element + heap_tpm_event_log_element->size);
+      heap_end_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_END;
+      heap_end_element->size = sizeof (*heap_end_element);
+    }
   else
     {
+      grub_dprintf ("slaunch", "TPM 2.0 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_20_EVTLOG_SUPPORT))
 	return grub_error (GRUB_ERR_BAD_ARGUMENT,
 			   N_("original TXT TPM 2.0 event log format is not supported"));
