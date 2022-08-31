@@ -530,6 +530,32 @@ set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
   return err;
 }
 
+void
+grub_txt_init_tpm_event_log (void *buf, grub_size_t size)
+{
+  struct grub_txt_event_log_container *elog;
+
+  if (buf == NULL || size == 0)
+    return;
+
+  /* For TPM 2.0 just clear the area, only TPM 1.2 requires initialization. */
+  grub_memset (buf, 0, size);
+
+  if (grub_get_tpm_ver () != GRUB_TPM_12)
+    return;
+
+  elog = (struct grub_txt_event_log_container *) buf;
+
+  grub_memcpy ((void *) elog->signature, EVTLOG_SIGNATURE, sizeof (elog->signature));
+  elog->container_ver_major = EVTLOG_CNTNR_MAJOR_VER;
+  elog->container_ver_minor = EVTLOG_CNTNR_MINOR_VER;
+  elog->pcr_event_ver_major = EVTLOG_EVT_MAJOR_VER;
+  elog->pcr_event_ver_minor = EVTLOG_EVT_MINOR_VER;
+  elog->size = size;
+  elog->pcr_events_offset = sizeof (*elog);
+  elog->next_event_offset = sizeof (*elog);
+}
+
 static void
 setup_txt_slrt_entry (struct grub_slaunch_params *slparams,
                       struct grub_txt_os_mle_data *os_mle_data)
@@ -702,6 +728,8 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   sinit_caps = grub_txt_get_sinit_capabilities (sinit);
 
+  grub_dprintf ("slaunch", "SINIT capabilities %08x\n", sinit_caps);
+
   /*
    * In the latest TXT Software Development Guide as of now (April 2023,
    * Revision 017.4) bits 4 and 5 (used to be "no legacy PCR usage" and
@@ -715,6 +743,25 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
    * reliably test for those.
    */
   os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
+
+  if (grub_get_tpm_ver () == GRUB_TPM_20)
+    {
+      if ((sinit_caps & os_sinit_data->capabilities) != os_sinit_data->capabilities)
+        return grub_error (GRUB_ERR_BAD_ARGUMENT,
+                           N_("Details/authorities PCR usage is not supported"));
+    }
+  else
+    {
+      if (!(sinit_caps & GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE))
+        {
+          grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
+          if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+            return grub_error (GRUB_ERR_BAD_ARGUMENT,
+                               N_("Not a single PCR usage available in SINIT capabilities"));
+
+          os_sinit_data->capabilities = 0;
+        }
+    }
 
   /*
    * APs (application processors) can't be brought up by usual INIT-SIPI-SIPI
@@ -733,10 +780,21 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
     os_sinit_data->capabilities |= GRUB_TXT_CAPS_ECX_PT_SUPPORT;
 
   if (grub_get_tpm_ver () == GRUB_TPM_12)
-    return grub_error (GRUB_ERR_NOT_IMPLEMENTED_YET,
-		       N_("TPM 1.2 detected, but not implemented yet"));
+    {
+      grub_dprintf ("slaunch", "TPM 1.2 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
+      os_sinit_data->flags = GRUB_TXT_PCR_EXT_MAX_PERF_POLICY;
+      os_sinit_data->version = OS_SINIT_DATA_TPM_12_VER;
+
+      elt = add_ext_data_elt(os_sinit_data,
+                             GRUB_TXT_HEAP_EXTDATA_TYPE_TPM_EVENT_LOG_PTR,
+                             sizeof (struct grub_txt_heap_tpm_event_log_element));
+      elt->tpm_event_log.event_log_phys_addr = slparams->tpm_evt_log_base;
+    }
   else
     {
+      grub_dprintf ("slaunch", "TPM 2.0 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_20_EVTLOG_SUPPORT))
 	return grub_error (GRUB_ERR_BAD_ARGUMENT,
 			   N_("original TXT TPM 2.0 event log format is not supported"));
