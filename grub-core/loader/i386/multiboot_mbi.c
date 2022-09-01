@@ -230,7 +230,7 @@ grub_multiboot_load (grub_file_t file, const char *filename)
 #include <grub/i386/pc/vbe.h>
 #endif
 
-static grub_size_t
+grub_size_t
 grub_multiboot_get_mbi_size (void)
 {
   grub_size_t ret;
