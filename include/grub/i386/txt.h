@@ -100,6 +100,7 @@ struct grub_txt_acm_header
 } GRUB_PACKED;
 
 #define GRUB_TXT_ACM_UUID "\xaa\x3a\xc0\x7f\xa7\x46\xdb\x18\x2e\xac\x69\x8f\x8d\x41\x7f\x5a"
+#define GRUB_TXT_MLE_UUID "\x5a\xac\x82\x90\x6f\x47\xa7\x74\x0f\x5c\x55\xa2\xcb\x51\xb6\x42"
 
 #define GRUB_TXT_ACM_CHIPSET_TYPE_BIOS		0
 #define GRUB_TXT_ACM_CHIPSET_TYPE_SINIT		1
