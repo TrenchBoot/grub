@@ -51,6 +51,7 @@ struct grub_slaunch_params
 
 extern grub_uint32_t grub_slaunch_platform_type (void);
 extern void *grub_slaunch_module (void);
+extern struct grub_slaunch_params *grub_slaunch_params (void);
 
 #endif /* ASM_FILE */
 

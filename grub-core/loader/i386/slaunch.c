@@ -36,6 +36,8 @@ static grub_uint32_t slp = SLP_NONE;
 
 static void *slaunch_module = NULL;
 
+static struct grub_slaunch_params slparams;
+
 grub_uint32_t
 grub_slaunch_platform_type (void)
 {
@@ -46,6 +48,12 @@ void *
 grub_slaunch_module (void)
 {
   return slaunch_module;
+}
+
+struct grub_slaunch_params *
+grub_slaunch_params (void)
+{
+  return &slparams;
 }
 
 static grub_err_t
