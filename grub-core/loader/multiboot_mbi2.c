@@ -36,6 +36,9 @@
 #include <grub/i18n.h>
 #include <grub/net.h>
 #include <grub/lib/cmdline.h>
+#include <grub/i386/memory.h>
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
 
 #if defined (GRUB_MACHINE_EFI)
 #include <grub/efi/efi.h>
@@ -277,6 +280,9 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
  
   if (addr_tag)
     {
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	return grub_error (GRUB_ERR_BAD_OS, "Slaunch not supported with multiboot addr tag");
+
       grub_uint64_t load_addr = (addr_tag->load_addr + 1)
 	? addr_tag->load_addr : (addr_tag->header_addr
 				 - ((char *) header - (char *) mld.buffer));
@@ -390,6 +396,34 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
     err = grub_multiboot2_set_console (GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT,
 				       accepted_consoles,
 				       0, 0, 0, console_required);
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      grub_relocator_chunk_t ch;
+      struct grub_slaunch_params *slparams = grub_slaunch_params();
+
+      if (grub_relocator_alloc_chunk_align_safe (grub_multiboot2_relocator, &ch, 0x1000000,
+						 UP_TO_TOP32 (GRUB_SLAUNCH_TPM_EVT_LOG_SIZE),
+						 GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+						 GRUB_RELOCATOR_PREFERENCE_HIGH, 1))
+	{
+	  grub_free (mld.buffer);
+	  return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate TPM event log area");
+	}
+
+      slparams->tpm_evt_log_base = get_physical_target_address (ch);
+      slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+      grub_txt_init_tpm_event_log(get_virtual_current_address (ch),
+				  slparams->tpm_evt_log_size);
+
+      grub_dprintf ("multiboot_loader", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
+		    (unsigned long) slparams->tpm_evt_log_base,
+		    (unsigned) slparams->tpm_evt_log_size);
+
+      grub_txt_setup_mle_ptab (slparams);
+    }
+
   return err;
 }
 
@@ -722,7 +756,12 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
 
   ptrorig = get_virtual_current_address (ch);
 #if defined (__i386__) || defined (__x86_64__)
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+
   *target = get_physical_target_address (ch);
+  /* Save MBI pointer in the TXT heap area */
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    slparams->boot_params_addr = *target;
 #elif defined (__mips)
   *target = get_physical_target_address (ch) | 0x80000000;
 #else

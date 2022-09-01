@@ -52,6 +52,7 @@
 #include <grub/i18n.h>
 #if defined (__i386__) || defined (__x86_64__)
 #include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
 #endif
 
 GRUB_MOD_LICENSE ("GPLv3+");
@@ -164,7 +165,26 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
-  state.edi = SLP_NONE;
+  grub_err_t err;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+  state.edi = grub_slaunch_platform_type ();
+
+  if (state.edi == SLP_INTEL_TXT)
+    {
+      err = grub_txt_boot_prepare (slparams);
+
+      if (err != GRUB_ERR_NONE)
+	{
+	  grub_printf ("TXT boot preparation failed");
+	  return;
+	}
+
+      /* Configure relocator GETSEC[SENTER] call. */
+      state.eax = GRUB_SMX_LEAF_SENTER;
+      state.ebx = slparams->sinit_acm_base;
+      state.ecx = slparams->sinit_acm_size;
+      state.edx = 0;
+    }
 
   grub_relocator32_boot (rel, state, 0);
 }

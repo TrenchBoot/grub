@@ -34,6 +34,8 @@
 #error "I'm confused"
 #endif
 
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
 #include <grub/i386/relocator.h>
 
 #define CONCAT(a,b)	CONCAT_(a, b)
@@ -60,6 +62,9 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
   grub_uint32_t load_offset = 0, load_size;
   int i;
   void *source = NULL;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+  grub_size_t total_size;
+  grub_uint32_t mle_hdr_offset;
 
   if (ehdr->e_ident[EI_MAG0] != ELFMAG0
       || ehdr->e_ident[EI_MAG1] != ELFMAG1
@@ -106,25 +111,86 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 		    (long) mld->align, mld->preference, load_size,
 		    mld->avoid_efi_boot_services);
 
-      if (load_size > mld->max_addr || mld->min_addr > mld->max_addr - load_size)
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	{
+#ifndef GRUB_USE_MULTIBOOT2
+	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#else
+	  /*
+	   * We allocate the the binary together with page tables to make one
+	   * contiguous block for MLE. We have to align up to PMR (2MB).
+	   */
+	  total_size = ALIGN_UP(load_size, GRUB_TXT_PMR_ALIGN);
+
+	  slparams->mle_size = total_size;
+
+	  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
+	  slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+
+	  /* Do not go below GRUB_TXT_PMR_ALIGN. */
+	  if (mld->align < GRUB_TXT_PMR_ALIGN)
+	    mld->align = GRUB_TXT_PMR_ALIGN;
+#endif
+	}
+      else
+	{
+	  total_size = load_size;
+	  slparams->mle_ptab_size = 0;
+	}
+
+      if (total_size > mld->max_addr || mld->min_addr > mld->max_addr - total_size)
 	return grub_error (GRUB_ERR_BAD_OS, "invalid min/max address and/or load size");
 
       err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
-						   mld->min_addr, mld->max_addr,
-						   load_size, mld->align ? mld->align : 1,
+						   mld->min_addr, mld->max_addr - total_size,
+						   total_size, mld->align ? mld->align : 1,
 						   mld->preference, mld->avoid_efi_boot_services);
 
       if (err)
-        {
-          grub_dprintf ("multiboot_loader", "Cannot allocate memory for OS image\n");
-          return err;
-        }
+	{
+	  grub_dprintf ("multiboot_loader", "Cannot allocate memory for OS image\n");
+	  return err;
+	}
 
       mld->load_base_addr = get_physical_target_address (ch);
       source = get_virtual_current_address (ch);
+      grub_memset (get_virtual_current_address (ch), 0, total_size);
+      grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
+		    (long) mld->load_base_addr, (long) source);
+
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	{
+#ifndef GRUB_USE_MULTIBOOT2
+	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#else
+	  slparams->mle_start = mld->load_base_addr;
+
+	  err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
+						       GRUB_MEMORY_MACHINE_UPPER_START,
+						       mld->load_base_addr - slparams->mle_ptab_size,
+						       slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN,
+						       GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+	  if (err)
+	    {
+	      grub_dprintf ("multiboot_loader", "Cannot allocate memory for MLE page tables\n");
+	      return err;
+	    }
+
+	  slparams->mle_ptab_mem = get_virtual_current_address (ch);
+	  slparams->mle_ptab_target = (grub_uint64_t) get_physical_target_address (ch);
+	  grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
+			slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
+			(unsigned) slparams->mle_ptab_size);
+#endif
+	}
     }
   else
-    mld->load_base_addr = mld->link_base_addr;
+    {
+      mld->load_base_addr = mld->link_base_addr;
+      /* TODO: support non-relocatable */
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+        return grub_error (GRUB_ERR_BAD_OS, "Non-relocatable ELF not supported with slaunch");
+    }
 
   grub_dprintf ("multiboot_loader", "relocatable=%d, link_base_addr=0x%x, "
 		"load_base_addr=0x%x\n", mld->relocatable,
@@ -178,6 +244,26 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
             grub_memset ((grub_uint8_t *) source + load_offset + phdr(i)->p_filesz, 0,
 			 phdr(i)->p_memsz - phdr(i)->p_filesz);
         }
+    }
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      slparams->mle_header_offset = 0xffffffff;
+
+      for (mle_hdr_offset = 0;  mle_hdr_offset < 0x1000; mle_hdr_offset += 16)
+	{
+	  if ( !grub_memcmp ((void *)((grub_addr_t) source + mle_hdr_offset), GRUB_TXT_MLE_UUID, 16) )
+	    {
+	      slparams->mle_header_offset = mle_hdr_offset;
+	      break;
+	    }
+	}
+
+      if (slparams->mle_header_offset == 0xffffffff)
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
+
+      grub_dprintf ("slaunch", "slparams->mle_header_offset: 0x%08x\n",
+			slparams->mle_header_offset);
     }
 
   for (i = 0; i < ehdr->e_phnum; i++)
