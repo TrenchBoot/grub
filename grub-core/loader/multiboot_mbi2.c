@@ -36,7 +36,9 @@
 #include <grub/i18n.h>
 #include <grub/net.h>
 #include <grub/lib/cmdline.h>
-
+#include <grub/i386/memory.h>
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
 #if defined (GRUB_MACHINE_EFI)
 #include <grub/efi/efi.h>
 #endif
@@ -120,6 +122,10 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
   struct multiboot_header_tag_framebuffer *fbtag = NULL;
   int accepted_consoles = GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT;
   mbi_load_data_t mld;
+  grub_addr_t mle_header_off = 0;
+  struct grub_txt_mle_header *mle_header;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+  grub_size_t total_size;
 
   mld.mbi_ver = 2;
   mld.relocatable = 0;
@@ -196,7 +202,6 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	      }
 	  break;
 	}
-	       
       case MULTIBOOT_HEADER_TAG_ADDRESS:
 	addr_tag = (struct multiboot_header_tag_address *) tag;
 	break;
@@ -268,6 +273,27 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	break;
       }
 
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      tag = (struct multiboot_header_tag *) ((grub_uint32_t *) tag + ALIGN_UP (tag->size, MULTIBOOT_TAG_ALIGN) / 4));
+      if (tag->type == MULTIBOOT_HEADER_TAG_END)
+        {
+	  /* MLE header will be right after MB2 header */
+	  mle_header_off = ALIGN_UP((grub_addr_t)tag + sizeof(*tag), 16);
+	  if ( grub_memcmp (mle_header_off, GRUB_TXT_MLE_UUID, 16) )
+	    {
+		grub_free (mld.buffer);
+		return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
+	    }
+	  slparams->mle_header_offset = mld.buffer - mle_header_off;
+        }
+      else
+	{
+	  grub_free (mld.buffer);
+	  return grub_error (GRUB_ERR_BAD_ARGUMENT, "Bad multiboot2 end tag");
+	}
+    }
+
   if (addr_tag && !entry_specified && !(keep_bs && efi_entry_specified))
     {
       grub_free (mld.buffer);
@@ -295,20 +321,99 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 
       if (mld.relocatable)
 	{
-	  if (code_size > mld.max_addr || mld.min_addr > mld.max_addr - code_size)
+	  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	    {
+	      /*
+	       * We allocate the the binary together with page tables and MBI
+	       * to make one contiguous block for MLE. We have to align up to
+	       * PMR (2MB).
+	       */
+	      total_size = ALIGN_UP(code_size, MULTIBOOT_TAG_ALIGN); 
+	      total_size += grub_multiboot2_get_mbi_size();
+	      total_size = ALIGN_UP(total_size, GRUB_TXT_PMR_ALIGN);
+
+	      slparams->mle_size = total_size;
+
+	      slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
+	      slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+
+	      total_size += slparams->mle_ptab_size;
+	      /* Do not go below GRUB_TXT_PMR_ALIGN. */
+	      if (mld.align > GRUB_TXT_PMR_ALIGN)
+		{
+		  mld.min_addr = (mld.min_addr > slparams->mle_ptab_size) ?
+				 (mld.min_addr - slparams->mle_ptab_size) : mld.align;
+		  mld.min_addr = ALIGN_UP (mld.min_addr, mld.align);
+		}
+	      else
+		{
+		  mld.min_addr = (mld.min_addr > slparams->mle_ptab_size) ?
+				 (mld.min_addr - slparams->mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
+		  mld.min_addr = ALIGN_UP (mld.min_addr, GRUB_TXT_PMR_ALIGN);
+		  mld.align = GRUB_TXT_PMR_ALIGN;
+		}
+
+	    }
+	  else
+	   {
+	     total_size = code_size;
+	     slparams->mle_ptab_size = 0;
+	   }
+
+	  if (total_size > mld.max_addr || mld.min_addr > mld.max_addr - total_size)
 	    {
 	      grub_free (mld.buffer);
 	      return grub_error (GRUB_ERR_BAD_OS, "invalid min/max address and/or load size");
 	    }
 
 	  err = grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch,
-						  mld.min_addr, mld.max_addr - code_size,
-						  code_size, mld.align ? mld.align : 1,
+						  mld.min_addr, mld.max_addr - total_size,
+						  total_size, mld.align ? mld.align : 1,
 						  mld.preference, keep_bs);
 	}
       else
+	{
+	  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	    {
+	      if (!IS_ALIGNED(load_addr, GRUB_TXT_PMR_ALIGN)) 
+		{
+		  grub_free (mld.buffer);
+		  return grub_error (GRUB_ERR_BAD_OS, "Bad alignment of load address");
+		}
+	      /*
+	       * We allocate the the binary together with page tables and MBI
+	       * to make one contiguous block for MLE. We have to align up to
+	       * PMR (2MB).
+	       */
+	      total_size = ALIGN_UP(code_size, MULTIBOOT_TAG_ALIGN); 
+	      total_size += grub_multiboot2_get_mbi_size();
+	      total_size = ALIGN_UP(total_size, GRUB_TXT_PMR_ALIGN);
+
+	      slparams->mle_size = total_size;
+
+	      slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
+	      slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+
+	      total_size += slparams->mle_ptab_size;
+	      /* Do not go below GRUB_TXT_PMR_ALIGN. */
+	      if (load_addr < slparams->mle_ptab_size || 
+	          ((load_addr > slparams->mle_ptab_size) && 
+		   (load_addr - slparams->mle_ptab_size < GRUB_TXT_PMR_ALIGN)))
+		{
+		  grub_free (mld.buffer);
+		  return grub_error (GRUB_ERR_BAD_OS, "Can't fit page tables");
+		}
+
+	    }
+	  else
+	    {
+	      total_size = code_size;
+	      slparams->mle_ptab_size = 0;
+	    }
+	
 	err = grub_relocator_alloc_chunk_addr (grub_multiboot2_relocator,
-					       &ch, load_addr, code_size);
+					       &ch, load_addr - slparams->mle_ptab_size, total_size);
+	}
       if (err)
 	{
 	  grub_dprintf ("multiboot_loader", "Error loading aout kludge\n");
@@ -316,8 +421,20 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	  return err;
 	}
       mld.link_base_addr = load_addr;
-      mld.load_base_addr = get_physical_target_address (ch);
-      source = get_virtual_current_address (ch);
+      mld.load_base_addr = get_physical_target_address (ch) + slparams->mle_ptab_size;
+      source = get_virtual_current_address (ch) + slparams->mle_ptab_size;
+
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	{
+	  grub_memset (get_virtual_current_address (ch), 0, total_size);
+	  slparams->mle_ptab_mem = get_physical_target_address (ch);
+	  slparams->mle_ptab_target = get_virtual_current_address (ch);
+
+	  slparams->mle_start = mld.load_base_addr;
+	  grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
+			slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
+			(unsigned) slparams->mle_ptab_size);
+	}
 
       grub_dprintf ("multiboot_loader", "link_base_addr=0x%x, load_base_addr=0x%x, "
 		    "load_size=0x%lx, relocatable=%d\n", mld.link_base_addr,
@@ -390,6 +507,55 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
     err = grub_multiboot2_set_console (GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT,
 				       accepted_consoles,
 				       0, 0, 0, console_required);
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      slparams->mle_start = load_base_addr;
+      slparams->mle_size = load_size;
+
+      /* Update the MLE header. */
+      mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
+      mle_header->cmdline_start = cmdline;
+      mle_header->cmdline_end = cmdline + cmdline_size;
+
+      if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+					    0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
+					    GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+					    GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+	{
+	  grub_free (mld.buffer);
+	  return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate TPM event log area");
+	}
+
+      slparams->tpm_evt_log_base = get_physical_target_address (ch);
+      slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+      grub_memset (get_virtual_current_address (ch), 0, slparams->tpm_evt_log_size);
+
+      grub_dprintf ("multiboot_loader", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
+		    (unsigned long) slparams->tpm_evt_log_base,
+		    (unsigned) slparams->tpm_evt_log_size);
+
+      if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+					    0xffffffff - GRUB_MLE_AP_WAKE_BLOCK_SIZE,
+					    GRUB_MLE_AP_WAKE_BLOCK_SIZE, GRUB_PAGE_SIZE,
+					    GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+	{
+	  grub_free (mld.buffer);
+	  return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate AP wakeup block");
+	}
+
+      slparams->ap_wake_block = get_physical_target_address (ch);
+      slparams->ap_wake_block_size = GRUB_MLE_AP_WAKE_BLOCK_SIZE;
+
+      grub_memset ((void *) ((grub_addr_t)slparams->ap_wake_block, 0, slparams->ap_wake_block_size);
+      grub_dprintf ("multiboot_loader", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
+		    (unsigned long) slparams->ap_wake_block,
+		    (unsigned long) slparams->ap_wake_block_size);
+
+      grub_txt_setup_mle_ptab (slparams);
+    }
+
   return err;
 }
 
@@ -428,7 +594,7 @@ net_size (void)
   return ret;
 }
 
-static grub_size_t
+grub_size_t
 grub_multiboot2_get_mbi_size (void)
 {
 #ifdef GRUB_MACHINE_EFI
@@ -708,21 +874,34 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
   grub_err_t err;
   grub_size_t bufsize;
   grub_relocator_chunk_t ch;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
   bufsize = grub_multiboot2_get_mbi_size ();
 
   COMPILE_TIME_ASSERT (MULTIBOOT_TAG_ALIGN % sizeof (grub_properly_aligned_t) == 0);
 
-  err = grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch,
-					  MBI_MIN_ADDR, 0xffffffff - bufsize,
-					  bufsize, MULTIBOOT_TAG_ALIGN,
-					  GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      /* MBI was saved and allocated earlier for slaunch */
+      *target = slparams->boot_params_addr;
+      /* For x86 and x64 the allocated physical addr of chunk is the same as virtual */
+      ptrorig = slparams->boot_params_addr;
+      err = 0;
+    }
+  else
+    {
+	err = grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch,
+					    MBI_MIN_ADDR, 0xffffffff - bufsize,
+					    bufsize, MULTIBOOT_TAG_ALIGN,
+					    GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+	ptrorig = get_virtual_current_address (ch);
+    }
   if (err)
     return err;
 
-  ptrorig = get_virtual_current_address (ch);
 #if defined (__i386__) || defined (__x86_64__)
-  *target = get_physical_target_address (ch);
+  if (grub_slaunch_platform_type () == SLP_NONE)
+    *target = get_physical_target_address (ch);
 #elif defined (__mips)
   *target = get_physical_target_address (ch) | 0x80000000;
 #else
