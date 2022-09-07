@@ -125,7 +125,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	     * to make one contiguous block for MLE. We have to align up to
 	     * PMR (2MB).
 	     */
-	    total_size = ALIGN_UP(load_size, MULTIBOOT_TAG_ALIGN); 
+	    total_size = ALIGN_UP(load_size, 8); // MULTIBOOT_TAG_ALIGN
 	    total_size += GRUB_MULTIBOOT (get_mbi_size)();
 	    total_size = ALIGN_UP(total_size, GRUB_TXT_PMR_ALIGN);
 
@@ -172,14 +172,14 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
         }
 
       mld->load_base_addr = get_physical_target_address (ch) + slparams->mle_ptab_size;
-      source = get_virtual_current_address (ch) + slparams->mle_ptab_size;
+      source = (void *)((grub_addr_t) get_virtual_current_address (ch) + slparams->mle_ptab_size);
       grub_memset (get_virtual_current_address (ch), 0, total_size);
       grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
 		    (long) mld->load_base_addr, (long) source);
 
       slparams->mle_start = mld->load_base_addr;
-      slparams->mle_ptab_mem = get_physical_target_address (ch);
-      slparams->mle_ptab_target = get_virtual_current_address (ch);
+      slparams->mle_ptab_mem = (void *)get_physical_target_address (ch);
+      slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
 
       grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
 		      slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
