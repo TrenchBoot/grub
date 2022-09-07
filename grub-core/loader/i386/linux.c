@@ -842,6 +842,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   grub_size_t align, min_align;
   int relocatable;
   grub_uint64_t preferred_address = GRUB_LINUX_BZIMAGE_ADDR;
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
   grub_dl_ref (my_mod);
 

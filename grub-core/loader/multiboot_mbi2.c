@@ -275,17 +275,17 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      tag = (struct multiboot_header_tag *) ((grub_uint32_t *) tag + ALIGN_UP (tag->size, MULTIBOOT_TAG_ALIGN) / 4));
+      tag = (struct multiboot_header_tag *) ((grub_uint32_t *) tag + ALIGN_UP (tag->size, MULTIBOOT_TAG_ALIGN) / 4);
       if (tag->type == MULTIBOOT_HEADER_TAG_END)
         {
 	  /* MLE header will be right after MB2 header */
 	  mle_header_off = ALIGN_UP((grub_addr_t)tag + sizeof(*tag), 16);
-	  if ( grub_memcmp (mle_header_off, GRUB_TXT_MLE_UUID, 16) )
+	  if ( grub_memcmp ((void *)mle_header_off, GRUB_TXT_MLE_UUID, 16) )
 	    {
 		grub_free (mld.buffer);
 		return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
 	    }
-	  slparams->mle_header_offset = mld.buffer - mle_header_off;
+	  slparams->mle_header_offset = (grub_addr_t)mld.buffer - (grub_addr_t)mle_header_off;
         }
       else
 	{
@@ -422,13 +422,13 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	}
       mld.link_base_addr = load_addr;
       mld.load_base_addr = get_physical_target_address (ch) + slparams->mle_ptab_size;
-      source = get_virtual_current_address (ch) + slparams->mle_ptab_size;
+      source = (void *)((grub_addr_t)get_virtual_current_address (ch) + slparams->mle_ptab_size);
 
       if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
 	{
 	  grub_memset (get_virtual_current_address (ch), 0, total_size);
-	  slparams->mle_ptab_mem = get_physical_target_address (ch);
-	  slparams->mle_ptab_target = get_virtual_current_address (ch);
+	  slparams->mle_ptab_mem = (void *) get_physical_target_address (ch);
+	  slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
 
 	  slparams->mle_start = mld.load_base_addr;
 	  grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
@@ -510,15 +510,8 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      slparams->mle_start = load_base_addr;
-      slparams->mle_size = load_size;
-
-      /* Update the MLE header. */
-      mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
-      mle_header->cmdline_start = cmdline;
-      mle_header->cmdline_end = cmdline + cmdline_size;
-
-      if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+      grub_relocator_chunk_t ch;
+      if (grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch, 0x1000000,
 					    0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
 					    GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
 					    GRUB_RELOCATOR_PREFERENCE_NONE, 1))
@@ -536,7 +529,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 		    (unsigned long) slparams->tpm_evt_log_base,
 		    (unsigned) slparams->tpm_evt_log_size);
 
-      if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+      if (grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch, 0x1000000,
 					    0xffffffff - GRUB_MLE_AP_WAKE_BLOCK_SIZE,
 					    GRUB_MLE_AP_WAKE_BLOCK_SIZE, GRUB_PAGE_SIZE,
 					    GRUB_RELOCATOR_PREFERENCE_NONE, 1))
@@ -548,7 +541,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
       slparams->ap_wake_block = get_physical_target_address (ch);
       slparams->ap_wake_block_size = GRUB_MLE_AP_WAKE_BLOCK_SIZE;
 
-      grub_memset ((void *) ((grub_addr_t)slparams->ap_wake_block, 0, slparams->ap_wake_block_size);
+      grub_memset ((void *) (grub_addr_t)slparams->ap_wake_block, 0, slparams->ap_wake_block_size);
       grub_dprintf ("multiboot_loader", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
 		    (unsigned long) slparams->ap_wake_block,
 		    (unsigned long) slparams->ap_wake_block_size);
