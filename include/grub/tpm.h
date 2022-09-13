@@ -38,6 +38,8 @@
 
 grub_err_t grub_tpm_measure (unsigned char *buf, grub_size_t size,
 			     grub_uint8_t pcr, const char *description);
+grub_err_t grub_tpm_log_event (unsigned char *buf, grub_size_t size, grub_uint8_t pcr,
+			       const char *description);
 int grub_tpm_present (void);
 
 static inline bool
