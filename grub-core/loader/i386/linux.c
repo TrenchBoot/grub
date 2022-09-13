@@ -85,6 +85,7 @@ static grub_size_t maximal_cmdline_size;
 static struct linux_kernel_info *linux_info;
 static struct linux_kernel_params linux_params;
 static char *linux_cmdline;
+static void *linux_params_ptr;
 #ifdef GRUB_MACHINE_EFI
 static grub_efi_uintn_t efi_mmap_size;
 #else
@@ -472,6 +473,7 @@ grub_linux_boot_mmap_fill (grub_uint64_t addr, grub_uint64_t size,
  * Please keep the logic in sync with the Linux kernel,
  * drivers/firmware/efi/libstub/secureboot.c:efi_get_secureboot().
  */
+#if 0
 static grub_uint8_t
 grub_efi_get_secureboot (void)
 {
@@ -544,6 +546,7 @@ grub_efi_get_secureboot (void)
 
   return secureboot;
 }
+#endif
 #endif
 
 static grub_err_t
@@ -835,11 +838,13 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   struct linux_i386_kernel_header lh;
   grub_uint8_t setup_sects;
   grub_size_t real_size, prot_size;
+  grub_size_t kernel_offset = 0;
   grub_ssize_t len;
   int i;
   grub_size_t align, min_align;
   int relocatable;
   grub_uint64_t preferred_address = GRUB_LINUX_BZIMAGE_ADDR;
+  grub_uint8_t *kernel = NULL;
 
   grub_dl_ref (my_mod);
 
@@ -853,13 +858,24 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   if (! file)
     goto fail;
 
-  if (grub_file_read (file, &lh, sizeof (lh)) != sizeof (lh))
+  len = grub_file_size (file);
+  kernel = grub_malloc (len);
+  if (!kernel)
+    {
+      grub_error (GRUB_ERR_OUT_OF_MEMORY, N_("cannot allocate kernel buffer"));
+      goto fail;
+    }
+
+  if (grub_file_read (file, kernel, len) != len)
     {
       if (!grub_errno)
 	grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"),
 		    argv[0]);
       goto fail;
     }
+
+  grub_memcpy (&lh, kernel, sizeof (lh));
+  kernel_offset = sizeof (lh);
 
   if (lh.boot_flag != grub_cpu_to_le16_compile_time (0xaa55))
     {
@@ -1309,6 +1325,8 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 
  fail:
 
+  grub_free (kernel);
+
   if (file)
     grub_file_close (file);
 
@@ -1412,7 +1430,7 @@ grub_cmd_initrd (grub_command_t cmd __attribute__ ((unused)),
   return grub_errno;
 }
 
-static grub_command_t cmd_linux, cmd_initrd;
+static grub_command_t cmd_linux, cmd_initrd, cmd_linuxefi, cmd_initrdefi;
 
 GRUB_MOD_INIT(linux)
 {
@@ -1421,8 +1439,14 @@ GRUB_MOD_INIT(linux)
 
   cmd_linux = grub_register_command ("linux", grub_cmd_linux,
 				     0, N_("Load Linux."));
+  cmd_linuxefi =
+    grub_register_command ("linuxefi", grub_cmd_linux,
+                           0, N_("Load Linux."));
   cmd_initrd = grub_register_command ("initrd", grub_cmd_initrd,
 				      0, N_("Load initrd."));
+  cmd_initrdefi =
+    grub_register_command ("initrdefi", grub_cmd_initrd,
+                           0, N_("Load initrd."));
   my_mod = mod;
 }
 
@@ -1432,5 +1456,7 @@ GRUB_MOD_FINI(linux)
     return;
 
   grub_unregister_command (cmd_linux);
+  grub_unregister_command (cmd_linuxefi);
   grub_unregister_command (cmd_initrd);
+  grub_unregister_command (cmd_initrdefi);
 }
