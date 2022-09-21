@@ -878,8 +878,8 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   mle_header->first_valid_page = 0;
   mle_header->mle_end = slparams->mle_size;
 
-  slparams->sinit_acm_base = (grub_uint32_t)(grub_addr_t) sinit_base;
-  slparams->sinit_acm_size = sinit_base->size * 4;
+  slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
+  slparams->dce_size = sinit_base->size * 4;
 
   grub_tpm_relinquish_lcl (0);
 

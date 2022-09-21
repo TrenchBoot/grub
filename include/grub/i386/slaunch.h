@@ -45,8 +45,8 @@ struct grub_slaunch_params
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
-  grub_uint32_t sinit_acm_base;
-  grub_uint32_t sinit_acm_size;
+  grub_uint32_t dce_base;
+  grub_uint32_t dce_size;
   grub_uint64_t tpm_evt_log_base;
   grub_uint32_t tpm_evt_log_size;
 };
