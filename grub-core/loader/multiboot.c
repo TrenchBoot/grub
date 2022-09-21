@@ -181,8 +181,8 @@ normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;
-      state.ebx = slparams->sinit_acm_base;
-      state.ecx = slparams->sinit_acm_size;
+      state.ebx = slparams->dce_base;
+      state.ecx = slparams->dce_size;
       state.edx = 0;
     }
 

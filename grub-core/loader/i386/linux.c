@@ -723,8 +723,8 @@ grub_linux_boot (void)
 
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;
-      state.ebx = slparams->sinit_acm_base;
-      state.ecx = slparams->sinit_acm_size;
+      state.ebx = slparams->dce_base;
+      state.ecx = slparams->dce_size;
       state.edx = 0;
     }
   else
