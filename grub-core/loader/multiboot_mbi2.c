@@ -123,7 +123,6 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
   int accepted_consoles = GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT;
   mbi_load_data_t mld;
   grub_addr_t mle_header_off = 0;
-  struct grub_txt_mle_header *mle_header;
   struct grub_slaunch_params *slparams = grub_slaunch_params();
   grub_size_t total_size;
 
@@ -877,7 +876,7 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
       /* MBI was saved and allocated earlier for slaunch */
       *target = slparams->boot_params_addr;
       /* For x86 and x64 the allocated physical addr of chunk is the same as virtual */
-      ptrorig = slparams->boot_params_addr;
+      ptrorig = (grub_properly_aligned_t *)slparams->boot_params_addr;
       err = 0;
     }
   else
