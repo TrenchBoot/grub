@@ -275,7 +275,6 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      tag = (struct multiboot_header_tag *) ((grub_uint32_t *) tag + ALIGN_UP (tag->size, MULTIBOOT_TAG_ALIGN) / 4);
       if (tag->type == MULTIBOOT_HEADER_TAG_END)
         {
 	  /* MLE header will be right after MB2 header */
