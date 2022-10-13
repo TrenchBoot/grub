@@ -409,8 +409,9 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	      slparams->mle_ptab_size = 0;
 	    }
 	
-	err = grub_relocator_alloc_chunk_addr (grub_multiboot2_relocator,
-					       &ch, load_addr - slparams->mle_ptab_size, total_size);
+	  err = grub_relocator_alloc_chunk_addr (grub_multiboot2_relocator,
+						 &ch, load_addr - slparams->mle_ptab_size,
+						 total_size);
 	}
       if (err)
 	{
@@ -429,9 +430,13 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	  slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
 
 	  slparams->mle_start = mld.load_base_addr;
+	  /* MBI is right after the multiboot kernel and included into MLE */
+	  slparams->boot_params_addr = mld.load_base_addr + ALIGN_UP(code_size, MULTIBOOT_TAG_ALIGN);
 	  grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
 			slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
 			(unsigned) slparams->mle_ptab_size);
+	  grub_dprintf ("multiboot_loader", "boot_params_addr = %lx\n",
+	  		(unsigned long) slparams->boot_params_addr);
 	}
 
       grub_dprintf ("multiboot_loader", "link_base_addr=0x%x, load_base_addr=0x%x, "
