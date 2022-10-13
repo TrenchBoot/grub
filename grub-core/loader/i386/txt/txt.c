@@ -520,9 +520,12 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   txt_heap = grub_txt_get_heap ();
 
+  grub_dprintf ("slaunch", "TXT heap %p\n", txt_heap);
+
   /* OS/loader to MLE data. */
 
   os_mle_data = grub_txt_os_mle_data_start (txt_heap);
+  grub_dprintf ("slaunch", "OS MLE data: %p\n", os_mle_data);
   size = (grub_uint64_t *) ((grub_addr_t) os_mle_data - sizeof (grub_uint64_t));
   *size = sizeof (*os_mle_data) + sizeof (grub_uint64_t);
 
@@ -538,10 +541,11 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
   os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
 
+  grub_dprintf ("slaunch", "Saving MTRRs to OS MLE data\n");
   save_mtrrs (os_mle_data);
 
   /* OS/loader to SINIT data. */
-
+  grub_dprintf ("slaunch", "Get supported OS SINIT data version\n");
   os_sinit_data_ver = grub_txt_supported_os_sinit_data_ver (sinit);
 
   if (os_sinit_data_ver < OS_SINIT_DATA_MIN_VER)
@@ -550,6 +554,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 		       " expected >= %d"), os_sinit_data_ver, OS_SINIT_DATA_MIN_VER);
 
   os_sinit_data = grub_txt_os_sinit_data_start (txt_heap);
+  grub_dprintf ("slaunch", "OS SINIT data: %p\n", os_sinit_data);
   size = (grub_uint64_t *) ((grub_addr_t) os_sinit_data - sizeof (grub_uint64_t));
 
   *size = sizeof(grub_uint64_t) + sizeof (struct grub_txt_os_sinit_data) +
@@ -621,6 +626,8 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   if (grub_get_tpm_ver () == GRUB_TPM_12)
     {
+      grub_dprintf ("slaunch", "TPM 1.2 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
       os_sinit_data->flags = GRUB_TXT_PCR_EXT_MAX_PERF_POLICY;
       os_sinit_data->version = OS_SINIT_DATA_TPM_12_VER;
 
@@ -659,7 +666,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
       heap_end_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_END;
       heap_end_element->size = sizeof (*heap_end_element);
     }
-
+  grub_dprintf ("slaunch", "TXT HEAP init done\n");
   /*
    * TODO: TXT spec: Note: BiosDataSize + OsMleDataSize + OsSinitDataSize + SinitMleDataSize
    * must be less than or equal to TXT.HEAP.SIZE, TXT spec, p. 102.
@@ -881,10 +888,13 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   if (sinit_base == NULL)
     return grub_errno;
 
+  grub_dprintf ("slaunch", "Init TXT heap\n");
   err = init_txt_heap (slparams, sinit_base);
 
   if (err != GRUB_ERR_NONE)
     return err;
+
+  grub_dprintf ("slaunch", "TXT heap successfully prepared\n");
 
   /* Update the MLE header. */
   mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
@@ -895,14 +905,19 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   slparams->sinit_acm_size = sinit_base->size * 4;
 
   grub_tpm_relinquish_lcl (0);
+  grub_dprintf ("slaunch", "TPM locality reliquished\n");
 
   err = set_mtrrs_for_acmod (sinit_base);
   if (err)
     return grub_error (err, N_("secure launch failed to set MTRRs for ACM"));
 
+  grub_dprintf ("slaunch", "MTRRs set for ACMOD\n");
+
   err = grub_txt_prepare_cpu ();
   if ( err )
     return err;
+
+  grub_dprintf ("slaunch", "CPU prepared for secure launch\n");
 
   if (!(grub_rdmsr (GRUB_MSR_X86_APICBASE) & GRUB_MSR_X86_APICBASE_BSP))
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
