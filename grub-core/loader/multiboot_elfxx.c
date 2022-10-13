@@ -183,8 +183,8 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
 #else
 	  slparams->mle_start = mld->load_base_addr;
-	  slparams->mle_ptab_mem = (void *)get_physical_target_address (ch);
-	  slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
+	  slparams->mle_ptab_mem = (void *)get_virtual_current_address (ch);
+	  slparams->mle_ptab_target = (grub_addr_t)get_physical_target_address (ch);
 
 	  /* MBI is right after the multiboot kernel and included into MLE */
 	  slparams->boot_params_addr = mld->load_base_addr + ALIGN_UP(load_size, 8);

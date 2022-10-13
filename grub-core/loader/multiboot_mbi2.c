@@ -283,7 +283,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 		grub_free (mld.buffer);
 		return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
 	    }
-	  slparams->mle_header_offset = (grub_addr_t)mle_header - (grub_addr_t)mld.buffer;
+	  slparams->mle_header_offset = mle_header - (grub_addr_t)mld.buffer;
 	  grub_dprintf ("slaunch", "slparams->mle_header_offset: 0x%08x mld.buffer: 0x%p"
 			"mle_header_off: 0x%08x\n",
 			slparams->mle_header_offset, mld.buffer, mle_header);
@@ -429,8 +429,8 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
       if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
 	{
 	  grub_memset (get_virtual_current_address (ch), 0, total_size);
-	  slparams->mle_ptab_mem = (void *) get_physical_target_address (ch);
-	  slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
+	  slparams->mle_ptab_mem = (void *) get_virtual_current_address (ch);
+	  slparams->mle_ptab_target = (grub_addr_t)get_physical_target_address (ch);
 
 	  slparams->mle_start = mld.load_base_addr;
 	  /* MBI is right after the multiboot kernel and included into MLE */
