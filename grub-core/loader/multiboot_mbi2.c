@@ -284,6 +284,10 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 		return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
 	    }
 	  slparams->mle_header_offset = (grub_addr_t)mld.buffer - (grub_addr_t)mle_header_off;
+	  grub_dprintf ("slaunch",
+		"mle_header_offset: 0x%08x mld.buffer: 0x%p"
+		"mle_header_off: 0x%08x\n",
+		slparams->mle_header_offset, mld.buffer, mle_header_off);
         }
       else
 	{
