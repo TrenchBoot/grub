@@ -604,14 +604,30 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   sinit_caps = grub_txt_get_sinit_capabilities (sinit);
 
-  /* CBnT bits 5:4 must be 11b, since D/A mapping is the only one supported. */
+  grub_dprintf ("slaunch", "SINIT capabilities %08x\n", sinit_caps);
+
   os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE |
 				GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
 
-  if ((sinit_caps & os_sinit_data->capabilities) != os_sinit_data->capabilities)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT,
-           N_("Details/authorities PCR usage is not supported"));
-
+  if (grub_get_tpm_ver () == GRUB_TPM_20)
+    {
+      /* CBnT bits 5:4 must be 11b, since D/A mapping is the only one supported. */
+      if ((sinit_caps & os_sinit_data->capabilities) != os_sinit_data->capabilities)
+        return grub_error (GRUB_ERR_BAD_ARGUMENT,
+               N_("Details/authorities PCR usage is not supported"));
+    }
+  else
+    {
+      if ((sinit_caps & GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE) != GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE)
+	{
+	  grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
+	  if ((sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE) == GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+	    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		N_("Not a single PCR usage available in SINIT capabilities"));
+	  
+	  os_sinit_data->capabilities = 0;
+	}
+    }
 
   /* Choose monitor RLP wakeup mechanism first. */
   if (sinit_caps & GRUB_TXT_CAPS_MONITOR_SUPPORT)
@@ -644,6 +660,8 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
     }
   else
     {
+      grub_dprintf ("slaunch", "TPM 2.0 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_20_EVTLOG_SUPPORT))
 	return grub_error (GRUB_ERR_BAD_ARGUMENT,
 			   N_("original TXT TPM 2.0 event log format is not supported"));
