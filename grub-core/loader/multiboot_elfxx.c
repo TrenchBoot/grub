@@ -116,46 +116,46 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 		    mld->avoid_efi_boot_services);
 
       if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
-	  {
+	{
 #ifndef GRUB_USE_MULTIBOOT2
-	    return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#else
+	  /*
+	   * We allocate the the binary together with page tables and MBI
+	   * to make one contiguous block for MLE. We have to align up to
+	   * PMR (2MB).
+	   */
+	  total_size = ALIGN_UP(load_size, 8); // MULTIBOOT_TAG_ALIGN
+	  total_size += GRUB_MULTIBOOT (get_mbi_size)();
+	  total_size = ALIGN_UP(total_size, GRUB_TXT_PMR_ALIGN);
+
+	  slparams->mle_size = total_size;
+
+	  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
+	  slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+
+	  total_size += slparams->mle_ptab_size;
+	  /* Do not go below GRUB_TXT_PMR_ALIGN. */
+	  if (mld->align > GRUB_TXT_PMR_ALIGN)
+	    {
+	      mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
+				(mld->min_addr - slparams->mle_ptab_size) : mld->align;
+	      mld->min_addr = ALIGN_UP (mld->min_addr, mld->align);
+	    }
+	  else
+	    {
+	      mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
+				(mld->min_addr - slparams->mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
+	      mld->min_addr = ALIGN_UP (mld->min_addr, GRUB_TXT_PMR_ALIGN);
+	      mld->align = GRUB_TXT_PMR_ALIGN;
+	    }
 #endif
-	    /*
-	     * We allocate the the binary together with page tables and MBI
-	     * to make one contiguous block for MLE. We have to align up to
-	     * PMR (2MB).
-	     */
-	    total_size = ALIGN_UP(load_size, 8); // MULTIBOOT_TAG_ALIGN
-	    total_size += GRUB_MULTIBOOT (get_mbi_size)();
-	    total_size = ALIGN_UP(total_size, GRUB_TXT_PMR_ALIGN);
-
-	    slparams->mle_size = total_size;
-
-	    slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
-	    slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
-
-	    total_size += slparams->mle_ptab_size;
-	    /* Do not go below GRUB_TXT_PMR_ALIGN. */
-	    if (mld->align > GRUB_TXT_PMR_ALIGN)
-	      {
-		mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
-			       (mld->min_addr - slparams->mle_ptab_size) : mld->align;
-		mld->min_addr = ALIGN_UP (mld->min_addr, mld->align);
-	      }
-	    else
-	      {
-		mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
-			       (mld->min_addr - slparams->mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
-		mld->min_addr = ALIGN_UP (mld->min_addr, GRUB_TXT_PMR_ALIGN);
-		mld->align = GRUB_TXT_PMR_ALIGN;
-	      }
-
-	  }
-	else
-	  {
-	    total_size = load_size;
-	    slparams->mle_ptab_size = 0;
-	  }
+	}
+      else
+	{
+	  total_size = load_size;
+	  slparams->mle_ptab_size = 0;
+	}
 
       if (total_size > mld->max_addr || mld->min_addr > mld->max_addr - total_size)
 	return grub_error (GRUB_ERR_BAD_OS, "invalid min/max address and/or load size");
@@ -166,10 +166,10 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 					      mld->preference, mld->avoid_efi_boot_services);
 
       if (err)
-        {
-          grub_dprintf ("multiboot_loader", "Cannot allocate memory for OS image\n");
-          return err;
-        }
+	{
+	  grub_dprintf ("multiboot_loader", "Cannot allocate memory for OS image\n");
+	  return err;
+	}
 
       mld->load_base_addr = get_physical_target_address (ch) + slparams->mle_ptab_size;
       source = (void *)((grub_addr_t) get_virtual_current_address (ch) + slparams->mle_ptab_size);
@@ -177,13 +177,24 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
       grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
 		    (long) mld->load_base_addr, (long) source);
 
-      slparams->mle_start = mld->load_base_addr;
-      slparams->mle_ptab_mem = (void *)get_physical_target_address (ch);
-      slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+	{
+#ifndef GRUB_USE_MULTIBOOT2
+	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#else
+	  slparams->mle_start = mld->load_base_addr;
+	  slparams->mle_ptab_mem = (void *)get_physical_target_address (ch);
+	  slparams->mle_ptab_target = (grub_addr_t)get_virtual_current_address (ch);
 
-      grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
-		      slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
-		      (unsigned) slparams->mle_ptab_size);
+	  /* MBI is right after the multiboot kernel and included into MLE */
+	  slparams->boot_params_addr = mld->load_base_addr + ALIGN_UP(load_size, 8);
+	  grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
+			slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
+			(unsigned) slparams->mle_ptab_size);
+	  grub_dprintf ("multiboot_loader", "boot_params_addr = %lx\n",
+			(unsigned long) slparams->boot_params_addr);
+#endif
+	}
     }
   else
     {
