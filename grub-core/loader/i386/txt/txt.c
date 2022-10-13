@@ -583,6 +583,15 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   os_sinit_data->mle_hdr_base = slparams->mle_start + slparams->mle_header_offset;
 
+  grub_dprintf ("slaunch", "mle_start: 0x%08x mle_header_offset: 0x%08x\n",
+		slparams->mle_start, slparams->mle_header_offset);
+
+  grub_dprintf ("slaunch",
+		"mle_ptab: 0x%" PRIxGRUB_UINT64_T " mle_size: 0x%"
+		PRIxGRUB_UINT64_T " mle_hdr_base: 0x%" PRIxGRUB_UINT64_T "\n",
+		os_sinit_data->mle_ptab, os_sinit_data->mle_size,
+		os_sinit_data->mle_hdr_base);
+
   /* TODO: Check low PMR with RMRR. Look at relevant tboot code too. */
   /* TODO: Kernel should not allocate any memory outside of PMRs regions!!! */
   os_sinit_data->vtd_pmr_lo_base = 0;
