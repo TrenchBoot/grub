@@ -581,7 +581,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   os_sinit_data->mle_ptab = slparams->mle_ptab_target;
   os_sinit_data->mle_size = slparams->mle_size;
 
-  os_sinit_data->mle_hdr_base = slparams->mle_start + slparams->mle_header_offset;
+  os_sinit_data->mle_hdr_base = slparams->mle_header_offset;
 
   grub_dprintf ("slaunch", "mle_start: 0x%08x mle_header_offset: 0x%08x\n",
 		slparams->mle_start, slparams->mle_header_offset);
