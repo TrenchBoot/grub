@@ -122,7 +122,6 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
   struct multiboot_header_tag_framebuffer *fbtag = NULL;
   int accepted_consoles = GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT;
   mbi_load_data_t mld;
-  grub_addr_t mle_header = 0;
   struct grub_slaunch_params *slparams = grub_slaunch_params();
   grub_size_t total_size;
 
@@ -271,29 +270,6 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	  }
 	break;
       }
-
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
-    {
-      if (tag->type == MULTIBOOT_HEADER_TAG_END)
-	{
-	  /* MLE header will be right after MB2 header */
-	  mle_header = ALIGN_UP((grub_addr_t)tag + sizeof(*tag), 16);
-	  if ( grub_memcmp ((void *)mle_header, GRUB_TXT_MLE_UUID, 16) )
-	    {
-		grub_free (mld.buffer);
-		return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
-	    }
-	  slparams->mle_header_offset = mle_header - (grub_addr_t)mld.buffer;
-	  grub_dprintf ("slaunch", "slparams->mle_header_offset: 0x%08x mld.buffer: 0x%p"
-			"mle_header_off: 0x%08x\n",
-			slparams->mle_header_offset, mld.buffer, mle_header);
-	}
-      else
-	{
-	  grub_free (mld.buffer);
-	  return grub_error (GRUB_ERR_BAD_ARGUMENT, "Bad multiboot2 end tag");
-	}
-    }
 
   if (addr_tag && !entry_specified && !(keep_bs && efi_entry_specified))
     {
