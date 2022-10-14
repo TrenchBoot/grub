@@ -22,6 +22,7 @@
 #define GRUB_TXT_H 1
 
 #include <grub/err.h>
+#include <grub/tpm.h>
 #include <grub/types.h>
 #include <grub/i386/memory.h>
 #include <grub/i386/mmio.h>
@@ -465,6 +466,34 @@ struct grub_txt_heap_event_log_ptr_elt2_1
   grub_uint32_t first_record_offset;
   grub_uint32_t next_record_offset;
 } GRUB_PACKED;
+
+struct tpm12_pcr_event {
+    grub_uint32_t pcr_index;
+    grub_uint32_t type;
+    grub_uint8_t digest[SHA1_DIGEST_SIZE];
+    grub_uint32_t data_size;
+    grub_uint8_t data[];
+} GRUB_PACKED;
+
+#define EVTLOG_SIGNATURE "TXT Event Container\0"
+#define EVTLOG_CNTNR_MAJOR_VER 1
+#define EVTLOG_CNTNR_MINOR_VER 0
+#define EVTLOG_EVT_MAJOR_VER 1
+#define EVTLOG_EVT_MINOR_VER 0
+
+struct event_log_container {
+    grub_uint8_t signature[20];
+    grub_uint8_t reserved[12];
+    grub_uint8_t container_ver_major;
+    grub_uint8_t container_ver_minor;
+    grub_uint8_t pcr_event_ver_major;
+    grub_uint8_t pcr_event_ver_minor;
+    grub_uint32_t size;
+    grub_uint32_t pcr_events_offset;
+    grub_uint32_t next_event_offset; 
+    struct tpm12_pcr_event pcr_events[];
+} GRUB_PACKED;
+
 
 /* TXT register and heap access */
 
