@@ -501,6 +501,24 @@ set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
   return GRUB_ERR_NONE;
 }
 
+static void init_tpm12_event_log(struct grub_slaunch_params *slparams)
+{
+  struct event_log_container *elog;
+  elog = (struct event_log_container *)(grub_addr_t)slparams->tpm_evt_log_base;
+
+  if (slparams->tpm_evt_log_base == 0 || slparams->tpm_evt_log_size == 0)
+    return;
+
+  grub_memcpy((void *)elog->signature, EVTLOG_SIGNATURE, sizeof(elog->signature));
+  elog->container_ver_major = EVTLOG_CNTNR_MAJOR_VER;
+  elog->container_ver_minor = EVTLOG_CNTNR_MINOR_VER;
+  elog->pcr_event_ver_major = EVTLOG_EVT_MAJOR_VER;
+  elog->pcr_event_ver_minor = EVTLOG_EVT_MINOR_VER;
+  elog->size = slparams->tpm_evt_log_size;
+  elog->pcr_events_offset = sizeof(*elog);
+  elog->next_event_offset = sizeof(*elog);
+}
+
 static grub_err_t
 init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header *sinit)
 {
@@ -661,6 +679,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
       heap_tpm_event_log_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_TPM_EVENT_LOG_PTR;
       heap_tpm_event_log_element->size = sizeof (*heap_tpm_event_log_element);
       heap_tpm_event_log_element->event_log_phys_addr = slparams->tpm_evt_log_base;
+      init_tpm12_event_log (slparams);
 
       heap_end_element = (struct grub_txt_heap_end_element *)
   ((grub_addr_t) heap_tpm_event_log_element + heap_tpm_event_log_element->size);
