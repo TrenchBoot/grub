@@ -42,7 +42,6 @@
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
 #include <grub/i386/relocator.h>
-#include <grub/lib/hexdump.h>
 
 #define CONCAT(a,b)	CONCAT_(a, b)
 #define CONCAT_(a,b)	a ## b
@@ -70,6 +69,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
   void *source = NULL;
   struct grub_slaunch_params *slparams = grub_slaunch_params();
   grub_size_t total_size;
+  grub_uint32_t mle_hdr_offset;
 
   if (ehdr->e_ident[EI_MAG0] != ELFMAG0
       || ehdr->e_ident[EI_MAG1] != ELFMAG1
@@ -251,13 +251,32 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 				mld->filename);
 		  return grub_errno;
 		}
-		hexdump ((unsigned long) source + load_offset, (char *)source + load_offset, 0x200);
 	    }
 
           if (phdr(i)->p_filesz < phdr(i)->p_memsz)
             grub_memset ((grub_uint8_t *) source + load_offset + phdr(i)->p_filesz, 0,
 			 phdr(i)->p_memsz - phdr(i)->p_filesz);
         }
+    }
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      slparams->mle_header_offset = 0xffffffff;
+
+      for (mle_hdr_offset = 0;  mle_hdr_offset < 0x1000; mle_hdr_offset += 16)
+	{
+	  if ( !grub_memcmp ((void *)(slparams->mle_start + mle_hdr_offset), GRUB_TXT_MLE_UUID, 16) )
+	    {
+	      slparams->mle_header_offset = mle_hdr_offset;
+	      break;
+	    }
+	}
+
+      if (slparams->mle_header_offset == 0xffffffff)
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
+
+      grub_dprintf ("slaunch", "slparams->mle_header_offset: 0x%08x\n",
+			slparams->mle_header_offset);
     }
 
   for (i = 0; i < ehdr->e_phnum; i++)
