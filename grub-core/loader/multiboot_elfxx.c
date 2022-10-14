@@ -42,6 +42,7 @@
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
 #include <grub/i386/relocator.h>
+#include <grub/lib/hexdump.h>
 
 #define CONCAT(a,b)	CONCAT_(a, b)
 #define CONCAT_(a,b)	a ## b
@@ -110,9 +111,9 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
     {
       load_size = highest_load - mld->link_base_addr;
 
-      grub_dprintf ("multiboot_loader", "align=0x%lx, preference=0x%x, "
+      grub_dprintf ("multiboot_loader", "link_base_addr=0x%08x, align=0x%lx, preference=0x%x, "
 		    "load_size=0x%x, avoid_efi_boot_services=%d\n",
-		    (long) mld->align, mld->preference, load_size,
+		    mld->link_base_addr, (long) mld->align, mld->preference, load_size,
 		    mld->avoid_efi_boot_services);
 
       if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
@@ -250,6 +251,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 				mld->filename);
 		  return grub_errno;
 		}
+		hexdump ((unsigned long) source + load_offset, (char *)source + load_offset, 0x200);
 	    }
 
           if (phdr(i)->p_filesz < phdr(i)->p_memsz)
