@@ -490,7 +490,7 @@ struct event_log_container {
     grub_uint8_t pcr_event_ver_minor;
     grub_uint32_t size;
     grub_uint32_t pcr_events_offset;
-    grub_uint32_t next_event_offset; 
+    grub_uint32_t next_event_offset;
     struct tpm12_pcr_event pcr_events[];
 } GRUB_PACKED;
 
