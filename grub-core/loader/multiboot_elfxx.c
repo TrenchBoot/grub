@@ -137,19 +137,12 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 
 	  total_size += slparams->mle_ptab_size;
 	  /* Do not go below GRUB_TXT_PMR_ALIGN. */
-	  if (mld->align > GRUB_TXT_PMR_ALIGN)
-	    {
-	      mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
-				(mld->min_addr - slparams->mle_ptab_size) : mld->align;
-	      mld->min_addr = ALIGN_UP (mld->min_addr, mld->align);
-	    }
-	  else
-	    {
-	      mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
-				(mld->min_addr - slparams->mle_ptab_size) : GRUB_TXT_PMR_ALIGN;
-	      mld->min_addr = ALIGN_UP (mld->min_addr, GRUB_TXT_PMR_ALIGN);
-	      mld->align = GRUB_TXT_PMR_ALIGN;
-	    }
+	  if (mld->align < GRUB_TXT_PMR_ALIGN)
+	    mld->align = GRUB_TXT_PMR_ALIGN;
+
+	  mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
+			  (mld->min_addr - slparams->mle_ptab_size) : mld->align;
+	  mld->min_addr = ALIGN_UP (mld->min_addr, mld->align);
 #endif
 	}
       else
