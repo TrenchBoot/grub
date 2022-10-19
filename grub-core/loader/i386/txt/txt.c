@@ -648,7 +648,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE))
 	{
 	  grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
-	  if ((sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE) == GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+	  if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
 	    return grub_error (GRUB_ERR_BAD_ARGUMENT,
 		N_("Not a single PCR usage available in SINIT capabilities"));
 
