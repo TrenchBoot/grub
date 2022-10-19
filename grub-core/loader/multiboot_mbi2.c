@@ -199,6 +199,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 	      }
 	  break;
 	}
+
       case MULTIBOOT_HEADER_TAG_ADDRESS:
 	addr_tag = (struct multiboot_header_tag_address *) tag;
 	break;
