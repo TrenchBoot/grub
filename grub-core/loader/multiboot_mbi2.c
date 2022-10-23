@@ -478,7 +478,7 @@ net_size (void)
   return ret;
 }
 
-grub_size_t
+static grub_size_t
 grub_multiboot2_get_mbi_size (void)
 {
 #ifdef GRUB_MACHINE_EFI
@@ -758,34 +758,26 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
   grub_err_t err;
   grub_size_t bufsize;
   grub_relocator_chunk_t ch;
-  struct grub_slaunch_params *slparams = grub_slaunch_params();
 
   bufsize = grub_multiboot2_get_mbi_size ();
 
   COMPILE_TIME_ASSERT (MULTIBOOT_TAG_ALIGN % sizeof (grub_properly_aligned_t) == 0);
 
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
-    {
-      /* MBI was saved and allocated earlier for slaunch */
-      *target = slparams->boot_params_addr;
-      /* For x86 and x64 the allocated physical addr of chunk is the same as virtual */
-      ptrorig = (grub_properly_aligned_t *)slparams->boot_params_addr;
-      err = 0;
-    }
-  else
-    {
-	err = grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch,
-					    MBI_MIN_ADDR, 0xffffffff - bufsize,
-					    bufsize, MULTIBOOT_TAG_ALIGN,
-					    GRUB_RELOCATOR_PREFERENCE_NONE, 1);
-	ptrorig = get_virtual_current_address (ch);
-    }
+  err = grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch,
+					  MBI_MIN_ADDR, 0xffffffff - bufsize,
+					  bufsize, MULTIBOOT_TAG_ALIGN,
+					  GRUB_RELOCATOR_PREFERENCE_NONE, 1);
   if (err)
     return err;
 
+  ptrorig = get_virtual_current_address (ch);
 #if defined (__i386__) || defined (__x86_64__)
-  if (grub_slaunch_platform_type () == SLP_NONE)
-    *target = get_physical_target_address (ch);
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+
+  *target = get_physical_target_address (ch);
+  /* Save MBI pointer in the TXT heap area */
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    slparams->boot_params_addr = *target;
 #elif defined (__mips)
   *target = get_physical_target_address (ch) | 0x80000000;
 #else
