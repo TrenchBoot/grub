@@ -130,10 +130,6 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	  /* Do not go below GRUB_TXT_PMR_ALIGN. */
 	  if (mld->align < GRUB_TXT_PMR_ALIGN)
 	    mld->align = GRUB_TXT_PMR_ALIGN;
-
-	  mld->min_addr = (mld->min_addr > slparams->mle_ptab_size) ?
-			  (mld->min_addr - slparams->mle_ptab_size) : mld->align;
-	  mld->min_addr = ALIGN_UP (mld->min_addr, mld->align);
 #endif
 	}
       else
@@ -171,11 +167,12 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 #else
 	  slparams->mle_start = mld->load_base_addr;
 
-          err = grub_relocator_alloc_chunk_align (GRUB_MULTIBOOT (relocator), &ch,
-					      0, mld->load_base_addr - slparams->mle_ptab_size,
-					      slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN,
-					      GRUB_RELOCATOR_PREFERENCE_NONE, 1);
-          if (err)
+	  err = grub_relocator_alloc_chunk_align (GRUB_MULTIBOOT (relocator), &ch,
+						  GRUB_MEMORY_MACHINE_UPPER_START,
+						  mld->load_base_addr - slparams->mle_ptab_size,
+						  slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN,
+						  GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+	  if (err)
 	    {
 	      grub_dprintf ("multiboot_loader", "Cannot allocate memory for MLE page tables\n");
 	      return err;
