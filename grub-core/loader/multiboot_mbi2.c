@@ -405,7 +405,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
       if (grub_relocator_alloc_chunk_align (grub_multiboot2_relocator, &ch, 0x1000000,
 					    0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
 					    GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
-					    GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+					    GRUB_RELOCATOR_PREFERENCE_HIGH, 1))
 	{
 	  grub_free (mld.buffer);
 	  return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate TPM event log area");
