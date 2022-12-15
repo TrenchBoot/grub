@@ -704,7 +704,7 @@ grub_linux_boot (void)
     grub_relocator_chunk_t ch;
     grub_size_t sz;
 
-    if (grub_add (ctx.real_size, efi_mmap_size, &sz))
+    if (grub_add (ctx.real_size, efi_mmap_size + ap_wake_block_size, &sz))
       return GRUB_ERR_OUT_OF_RANGE;
 
     err = grub_relocator_alloc_chunk_addr (relocator, &ch,
