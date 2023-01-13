@@ -351,32 +351,16 @@ struct grub_txt_bios_data
 /* GRUB SLAUNCH specific definitions OS-MLE data */
 #define GRUB_SL_BOOTPARAMS_OFFSET	0x12c
 #define GRUB_SL_MAX_EVENT_LOG_SIZE	(5*4*1024)   /* 4k*5 */
-#define GRUB_SL_MAX_VARIABLE_MTRRS	32
 #define GRUB_SL_OS_MLE_STRUCT_VERSION	1
-
-struct grub_slaunch_mtrr_pair
-{
-  grub_uint64_t mtrr_physbase;
-  grub_uint64_t mtrr_physmask;
-} GRUB_PACKED;
-
-struct grub_slaunch_mtrr_state
-{
-  grub_uint64_t default_mem_type;
-  grub_uint64_t mtrr_vcnt;
-  struct grub_slaunch_mtrr_pair mtrr_pair[GRUB_SL_MAX_VARIABLE_MTRRS];
-} GRUB_PACKED;
 
 struct grub_txt_os_mle_data
 {
   grub_uint32_t version;
   grub_uint32_t boot_params_addr;
-  grub_uint64_t saved_misc_enable_msr;
-  struct grub_slaunch_mtrr_state saved_bsp_mtrrs;
+  grub_uint64_t slrt;
+  grub_uint64_t txt_info;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
-  grub_uint64_t evtlog_addr;
-  grub_uint32_t evtlog_size;
   grub_uint8_t mle_scratch[64];
 } GRUB_PACKED;
 

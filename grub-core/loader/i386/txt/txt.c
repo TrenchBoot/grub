@@ -59,6 +59,7 @@
 #include <grub/types.h>
 #include <grub/dl.h>
 #include <grub/acpi.h>
+#include <grub/slr_table.h>
 #include <grub/cpu/relocator.h>
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
@@ -73,6 +74,30 @@
 #define OS_SINIT_DATA_TPM_20_VER	7
 
 #define OS_SINIT_DATA_MIN_VER		OS_SINIT_DATA_TPM_12_VER
+
+#define SLR_CURRENT_REVISION		1
+#define SLR_MAX_POLICY_ENTRIES		7
+
+struct grub_efi_info
+{
+  grub_uint32_t efi_signature;
+  grub_uint32_t efi_system_table;
+  grub_uint32_t efi_mem_desc_size;
+  grub_uint32_t efi_mem_desc_version;
+  grub_uint32_t efi_mmap;
+  grub_uint32_t efi_mmap_size;
+  grub_uint32_t efi_system_table_hi;
+  grub_uint32_t efi_mmap_hi;
+};
+
+/* Area to collect and build SLR Table information */
+static grub_uint8_t slr_policy_buf[GRUB_PAGE_SIZE] = {0};
+static struct grub_slr_entry_dl_info slr_dl_info_staging = {0};
+static struct grub_slr_entry_log_info slr_log_info_staging = {0};
+static struct grub_slr_entry_policy *slr_policy_staging =
+    (struct grub_slr_entry_policy *)slr_policy_buf;
+static struct grub_slr_entry_intel_info slr_intel_info_staging = {0};
+struct grub_slr_entry_hdr slr_end_staging;
 
 static grub_err_t
 enable_smx_mode (void)
@@ -233,31 +258,31 @@ grub_txt_prepare_cpu (void)
 }
 
 static void
-save_mtrrs (struct grub_txt_os_mle_data *os_mle_data)
+save_mtrrs (struct grub_txt_mtrr_state *saved_bsp_mtrrs)
 {
   grub_uint64_t i;
 
-  os_mle_data->saved_bsp_mtrrs.default_mem_type =
+  saved_bsp_mtrrs->default_mem_type =
     grub_rdmsr (GRUB_MSR_X86_MTRR_DEF_TYPE);
 
-  os_mle_data->saved_bsp_mtrrs.mtrr_vcnt =
+  saved_bsp_mtrrs->mtrr_vcnt =
     grub_rdmsr (GRUB_MSR_X86_MTRRCAP) & GRUB_MSR_X86_VCNT_MASK;
 
-  if (os_mle_data->saved_bsp_mtrrs.mtrr_vcnt > GRUB_SL_MAX_VARIABLE_MTRRS)
+  if (saved_bsp_mtrrs->mtrr_vcnt > GRUB_TXT_VARIABLE_MTRRS_LENGTH)
     {
       /* Print warning but continue saving what we can... */
       grub_printf ("WARNING: Actual number of variable MTRRs (%" PRIuGRUB_UINT64_T
 		   ") > GRUB_SL_MAX_VARIABLE_MTRRS (%d)\n",
-		   os_mle_data->saved_bsp_mtrrs.mtrr_vcnt,
-		   GRUB_SL_MAX_VARIABLE_MTRRS);
-      os_mle_data->saved_bsp_mtrrs.mtrr_vcnt = GRUB_SL_MAX_VARIABLE_MTRRS;
+		   saved_bsp_mtrrs->mtrr_vcnt,
+		   GRUB_TXT_VARIABLE_MTRRS_LENGTH);
+      saved_bsp_mtrrs->mtrr_vcnt = GRUB_TXT_VARIABLE_MTRRS_LENGTH;
     }
 
-  for (i = 0; i < os_mle_data->saved_bsp_mtrrs.mtrr_vcnt; ++i)
+  for (i = 0; i < saved_bsp_mtrrs->mtrr_vcnt; ++i)
     {
-      os_mle_data->saved_bsp_mtrrs.mtrr_pair[i].mtrr_physmask =
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physmask =
         grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + i * 2);
-      os_mle_data->saved_bsp_mtrrs.mtrr_pair[i].mtrr_physbase =
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physbase =
         grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSBASE0 + i * 2);
     }
 }
@@ -501,6 +526,141 @@ set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
   return GRUB_ERR_NONE;
 }
 
+static void
+init_slrt_storage (void)
+{
+  slr_dl_info_staging.hdr.tag = GRUB_SLR_ENTRY_DL_INFO;
+  slr_dl_info_staging.hdr.size = sizeof(struct grub_slr_entry_dl_info);
+
+  slr_log_info_staging.hdr.tag = GRUB_SLR_ENTRY_LOG_INFO;
+  slr_log_info_staging.hdr.size = sizeof(struct grub_slr_entry_log_info);
+
+  slr_policy_staging->hdr.tag = GRUB_SLR_ENTRY_ENTRY_POLICY;
+  slr_policy_staging->hdr.size = sizeof(struct grub_slr_entry_policy) +
+    SLR_MAX_POLICY_ENTRIES*sizeof(struct grub_slr_policy_entry);
+  slr_policy_staging->revision = SLR_CURRENT_REVISION;
+  slr_policy_staging->nr_entries = SLR_MAX_POLICY_ENTRIES;
+
+  slr_intel_info_staging.hdr.tag = GRUB_SLR_ENTRY_INTEL_INFO;
+  slr_intel_info_staging.hdr.size = sizeof(struct grub_slr_entry_intel_info);
+
+  slr_end_staging.tag = GRUB_SLR_ENTRY_END;
+  slr_end_staging.size = sizeof(struct grub_slr_entry_hdr);
+}
+
+static void
+setup_slrt_policy (struct grub_slaunch_params *slparams,
+                   struct grub_txt_os_mle_data *os_mle_data)
+{
+  struct grub_slr_policy_entry *entry =
+    (struct grub_slr_policy_entry *)((grub_uint8_t *)slr_policy_staging +
+                                     sizeof(struct grub_slr_entry_policy));
+  struct linux_kernel_params *boot_params = slparams->params;
+  struct grub_efi_info *efi_info;
+
+  /* A bit of work to extract the v2.08 EFI info from the linux params */
+  efi_info = (struct grub_efi_info *)((grub_uint8_t *)&(boot_params->v0208)
+                                       + 2*sizeof(grub_uint32_t));
+
+  /* the SLR table should be measured too, at least parts of it */
+  entry->pcr = 18;
+  entry->entity_type = GRUB_SLR_ET_SLRT;
+  entry->entity = slparams->slr_table_base;
+  entry->flags |= GRUB_SLR_POLICY_IMPLICIT_SIZE;
+  grub_strcpy (&entry->evt_info[0], "Measured SLR Table");
+  entry++;
+
+  /* boot params have everything needed to setup policy except OS2MLE data */
+  entry->pcr = 18;
+  entry->entity_type = GRUB_SLR_ET_BOOT_PARAMS;
+  entry->entity = (grub_uint64_t)boot_params;
+  entry->size = GRUB_PAGE_SIZE;
+  grub_strcpy (&entry->evt_info[0], "Measured boot parameters");
+  entry++;
+
+  if (boot_params->setup_data)
+    {
+      entry->pcr = 18;
+      entry->entity_type = GRUB_SLR_ET_SETUP_DATA;
+      entry->entity = boot_params->setup_data;
+      entry->flags |= GRUB_SLR_POLICY_IMPLICIT_SIZE;
+      grub_strcpy (&entry->evt_info[0], "Measured Kernel setup_data");
+    }
+  else
+      entry->entity_type = GRUB_SLR_ET_UNUSED;
+  entry++;
+
+  entry->pcr = 18;
+  entry->entity_type = GRUB_SLR_ET_CMDLINE;
+  /* TODO the cmdline ptr can have hi bits but for now assume always < 32G */
+  entry->entity = boot_params->cmd_line_ptr;
+  entry->size = boot_params->cmdline_size;
+  grub_strcpy (&entry->evt_info[0], "Measured Kernel command line");
+  entry++;
+
+  if (!grub_memcmp(&efi_info->efi_signature, "EL64", sizeof(grub_uint32_t)))
+    {
+      grub_uint64_t mmap_hi;
+
+      entry->pcr = 18;
+      entry->entity_type = GRUB_SLR_ET_EFI_MEMMAP;
+      entry->entity = efi_info->efi_mmap;
+      mmap_hi =  efi_info->efi_mmap_hi;
+      entry->entity |= mmap_hi << 32;
+      entry->size = efi_info->efi_mmap_size;
+      grub_strcpy (&entry->evt_info[0], "Measured EFI memory map");
+    }
+  else
+      entry->entity_type = GRUB_SLR_ET_UNUSED;
+  entry++;
+
+  if (boot_params->ramdisk_image)
+    {
+      entry->pcr = 17;
+      entry->entity_type = GRUB_SLR_ET_INITRD;
+      /* TODO the initrd image and size can have hi bits but for now assume always < 32G */
+      entry->entity = boot_params->ramdisk_image;
+      entry->size = boot_params->ramdisk_size;
+      grub_strcpy (&entry->evt_info[0], "Measured Kernel initrd");
+    }
+  else
+    entry->entity_type = GRUB_SLR_ET_UNUSED;
+  entry++;
+
+  entry->pcr = 18;
+  entry->entity_type = GRUB_SLR_ET_TXT_OS2MLE;
+  entry->entity = (grub_uint64_t)os_mle_data;
+  entry->size = sizeof(struct grub_txt_os_mle_data);
+  grub_strcpy (&entry->evt_info[0], "Measured TXT OS-MLE data");
+}
+
+static void
+setup_slr_table (struct grub_slaunch_params *slparams)
+{
+  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
+                      (struct grub_slr_entry_hdr *)&slr_dl_info_staging);
+  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
+                      (struct grub_slr_entry_hdr *)&slr_log_info_staging);
+  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
+                      (struct grub_slr_entry_hdr *)slr_policy_staging);
+  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
+                      (struct grub_slr_entry_hdr *)&slr_intel_info_staging);
+  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
+                       &slr_end_staging);
+}
+
+static void
+set_txt_info_ptr (struct grub_slaunch_params *slparams,
+                  struct grub_txt_os_mle_data *os_mle_data)
+{
+  struct grub_slr_entry_hdr *txt_info;
+
+  txt_info = grub_slr_next_entry_by_tag ((struct grub_slr_table *)slparams->slr_table_base,
+                                         NULL,
+                                         GRUB_SLR_ENTRY_INTEL_INFO);
+  os_mle_data->txt_info = (grub_uint64_t)txt_info;
+}
+
 static grub_err_t
 init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header *sinit)
 {
@@ -514,10 +674,14 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 #ifdef GRUB_MACHINE_EFI
   struct grub_acpi_rsdp_v20 *rsdp;
 #endif
+  struct grub_txt_mtrr_state saved_mtrrs_state = {0};
 
   /* BIOS data already verified in grub_txt_verify_platform(). */
 
   txt_heap = grub_txt_get_heap ();
+
+  /* Prepare SLR table staging area */
+  init_slrt_storage ();
 
   /* OS/loader to MLE data. */
 
@@ -529,15 +693,28 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   os_mle_data->version = GRUB_SL_OS_MLE_STRUCT_VERSION;
   os_mle_data->boot_params_addr = (grub_uint32_t)(grub_addr_t) slparams->params;
-  os_mle_data->saved_misc_enable_msr = grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
+  os_mle_data->slrt = slparams->slr_table_base;
 
   os_mle_data->ap_wake_block = slparams->ap_wake_block;
   os_mle_data->ap_wake_block_size = slparams->ap_wake_block_size;
 
-  os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
-  os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
+  slr_log_info_staging.addr = slparams->tpm_evt_log_base;
+  slr_log_info_staging.size = slparams->tpm_evt_log_size;
+  slr_log_info_staging.format =
+        (grub_get_tpm_ver () == GRUB_TPM_20) ?
+        GRUB_SLR_DRTM_TPM20_LOG : GRUB_SLR_DRTM_TPM20_LOG;
 
-  save_mtrrs (os_mle_data);
+  /* Save the BSPs MTRR state so post launch can restore itt */
+  save_mtrrs (&saved_mtrrs_state);
+
+  /* Setup the TXT specific SLR information */
+  slr_intel_info_staging.saved_misc_enable_msr =
+               grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
+  grub_memcpy (&(slr_intel_info_staging.saved_bsp_mtrrs), &saved_mtrrs_state,
+               sizeof(struct grub_txt_mtrr_state));
+
+  /* Create the SLR security policy */
+  setup_slrt_policy (slparams, os_mle_data);
 
   /* OS/loader to SINIT data. */
 
@@ -860,8 +1037,14 @@ grub_err_t
 grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
 {
   grub_err_t err;
+  grub_uint8_t *txt_heap;
+  struct grub_txt_os_mle_data *os_mle_data;
   struct grub_txt_mle_header *mle_header;
   struct grub_txt_acm_header *sinit_base;
+  struct grub_slr_table *slrt = slparams->slr_table_mem;
+
+  /* Setup the generic bits of the SLRT */
+  grub_slr_init_table(slrt, GRUB_SLR_INTEL_TXT, slparams->slr_table_size);
 
   sinit_base = grub_txt_sinit_select (grub_slaunch_module ());
 
@@ -880,6 +1063,17 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
 
   slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
   slparams->dce_size = sinit_base->size * 4;
+
+  /* Setup DCE and DLME information */
+  slr_dl_info_staging.dce_base = slparams->dce_base;
+  slr_dl_info_staging.dce_size = slparams->dce_size;
+  slr_dl_info_staging.dlme_entry = mle_header->entry_point;
+
+  /* Final setup of SLR table */
+  txt_heap = grub_txt_get_heap ();
+  os_mle_data = grub_txt_os_mle_data_start (txt_heap);
+  setup_slr_table (slparams);
+  set_txt_info_ptr (slparams, os_mle_data);
 
   grub_tpm_relinquish_lcl (0);
 

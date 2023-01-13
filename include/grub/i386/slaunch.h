@@ -37,11 +37,14 @@
 struct grub_slaunch_params
 {
   struct linux_kernel_params *params;
+  grub_uint64_t slr_table_base;
+  grub_uint32_t slr_table_size;
+  void *slr_table_mem;
   grub_uint32_t mle_start;
   grub_uint32_t mle_size;
-  void *mle_ptab_mem;
   grub_uint64_t mle_ptab_target;
   grub_uint32_t mle_ptab_size;
+  void *mle_ptab_mem;
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
@@ -49,6 +52,7 @@ struct grub_slaunch_params
   grub_uint32_t dce_size;
   grub_uint64_t tpm_evt_log_base;
   grub_uint32_t tpm_evt_log_size;
+  grub_uint32_t boot_params_base;
 };
 
 extern grub_uint32_t grub_slaunch_platform_type (void);

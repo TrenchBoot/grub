@@ -253,6 +253,22 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 		      (unsigned) slparams.mle_ptab_size);
 
 	if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+					      0xffffffff - GRUB_PAGE_SIZE,
+					      GRUB_PAGE_SIZE, GRUB_PAGE_SIZE,
+					      GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+	  goto fail;
+
+	slparams.slr_table_base = get_physical_target_address (ch);
+	slparams.slr_table_size = GRUB_PAGE_SIZE;
+	slparams.slr_table_mem = get_virtual_current_address (ch);
+
+	grub_memset (slparams.slr_table_mem, 0, slparams.slr_table_size);
+
+	grub_dprintf ("linux", "slr_table_base = %lx, slr_table_size = %x\n",
+		      (unsigned long) slparams.slr_table_base,
+		      (unsigned) slparams.slr_table_size);
+
+	if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
 					      0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
 					      GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
 					      GRUB_RELOCATOR_PREFERENCE_NONE, 1))
@@ -725,6 +741,9 @@ grub_linux_boot (void)
       grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
 		    (unsigned long) slparams.ap_wake_block,
 		    (unsigned long) ap_wake_block_size);
+
+      /* Grab the real mode target address, this is the boot params page */
+      slparams.boot_params_base = ctx.real_mode_target;
     }
 
   grub_dprintf ("linux", "real_mode_mem = %p\n",
@@ -752,6 +771,8 @@ grub_linux_boot (void)
     grub_efi_uint32_t efi_desc_version;
 
     ctx.params->secure_boot = grub_efi_get_secureboot ();
+
+    grub_dprintf ("linux", "EFI exit boot services\n");
 
     err = grub_efi_finish_boot_services (&efi_mmap_size, efi_mmap_buf, NULL,
 					 &efi_desc_size, &efi_desc_version);
