@@ -23,11 +23,13 @@
 #include <grub/misc.h>
 #include <grub/types.h>
 #include <grub/dl.h>
+#include <grub/slr_table.h>
 #include <grub/cpu/relocator.h>
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/mmio.h>
 #include <grub/i386/slaunch.h>
+#include <grub/i386/tpm.h>
 #include <grub/i386/txt.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
@@ -37,6 +39,13 @@ static grub_uint32_t slp = SLP_NONE;
 static void *slaunch_module = NULL;
 
 static struct grub_slaunch_params slparams;
+
+/* Area to collect and build SLR Table information. */
+static struct grub_slr_entry_dl_info slr_dl_info_staging;
+static struct grub_slr_entry_log_info slr_log_info_staging;
+static grub_uint8_t slr_policy_buf[GRUB_PAGE_SIZE];
+static struct grub_slr_entry_policy *slr_policy_staging =
+    (struct grub_slr_entry_policy *)slr_policy_buf;
 
 grub_uint32_t
 grub_slaunch_platform_type (void)
@@ -54,6 +63,84 @@ struct grub_slaunch_params *
 grub_slaunch_params (void)
 {
   return &slparams;
+}
+
+void
+grub_slaunch_init_slrt_storage (int arch)
+{
+  struct grub_txt_mle_header *mle_header =
+      (void *) ((grub_uint8_t *) slparams.mle_mem + slparams.mle_header_offset);
+
+  /* Setup the generic bits of the SLRT. */
+  grub_slr_init_table(slparams.slr_table_mem, arch, slparams.slr_table_size);
+
+  /* Setup DCE and DLME information. */
+  slr_dl_info_staging.hdr.tag = GRUB_SLR_ENTRY_DL_INFO;
+  slr_dl_info_staging.hdr.size = sizeof(struct grub_slr_entry_dl_info);
+  slr_dl_info_staging.dce_base = slparams.dce_base;
+  slr_dl_info_staging.dce_size = slparams.dce_size;
+  slr_dl_info_staging.dlme_entry = mle_header->entry_point;
+
+  slr_log_info_staging.hdr.tag = GRUB_SLR_ENTRY_LOG_INFO;
+  slr_log_info_staging.hdr.size = sizeof(struct grub_slr_entry_log_info);
+  slr_log_info_staging.addr = slparams.tpm_evt_log_base;
+  slr_log_info_staging.size = slparams.tpm_evt_log_size;
+  slr_log_info_staging.format =
+        (grub_get_tpm_ver () == GRUB_TPM_20) ?
+        GRUB_SLR_DRTM_TPM20_LOG : GRUB_SLR_DRTM_TPM12_LOG;
+
+  slr_policy_staging->hdr.tag = GRUB_SLR_ENTRY_DRTM_POLICY;
+  slr_policy_staging->hdr.size = sizeof(struct grub_slr_entry_policy);
+  slr_policy_staging->revision = GRUB_SLR_TABLE_REVISION;
+  slr_policy_staging->nr_entries = 0;
+
+  /* The SLR table should be measured too, at least parts of it. */
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_SLRT,
+                                      GRUB_SLR_POLICY_IMPLICIT_SIZE,
+                                      slparams.slr_table_base,
+                                      /*size=*/0,
+                                      "Measured SLR Table");
+}
+
+void
+grub_slaunch_add_slrt_policy_entry (grub_uint16_t pcr,
+                                    grub_uint16_t entity_type,
+                                    grub_uint16_t flags,
+                                    grub_uint64_t entity,
+                                    grub_uint64_t size,
+                                    const char *evt_info)
+{
+  struct grub_slr_policy_entry *entry =
+    (void *)((grub_uint8_t *)slr_policy_staging +
+             sizeof(struct grub_slr_entry_policy) +
+             slr_policy_staging->nr_entries*sizeof(*entry));
+
+  if (slr_policy_staging->hdr.size + sizeof(*entry) > sizeof(slr_policy_buf))
+      grub_fatal("Not enough space for adding policy entry: %s!  The buffer is full.",
+                 evt_info);
+
+  entry->pcr = pcr;
+  entry->entity_type = entity_type;
+  entry->flags = flags;
+  entry->entity = entity;
+  entry->size = size;
+
+  grub_strncpy(entry->evt_info, evt_info, sizeof(entry->evt_info) - 1);
+  entry->evt_info[sizeof(entry->evt_info) - 1] = '\0';
+
+  slr_policy_staging->hdr.size += sizeof(*entry);
+  ++slr_policy_staging->nr_entries;
+}
+
+void
+grub_slaunch_finish_slr_table (void)
+{
+  struct grub_slr_table *slr_table = slparams.slr_table_mem;
+
+  grub_slr_add_entry (slr_table, &slr_dl_info_staging.hdr);
+  grub_slr_add_entry (slr_table, &slr_log_info_staging.hdr);
+  grub_slr_add_entry (slr_table, &slr_policy_staging->hdr);
 }
 
 static grub_err_t

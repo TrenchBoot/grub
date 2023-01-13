@@ -35,11 +35,15 @@
 struct grub_slaunch_params
 {
   grub_uint32_t boot_params_addr;
+  grub_uint64_t slr_table_base;
+  grub_uint32_t slr_table_size;
+  void *slr_table_mem;
   grub_uint32_t mle_start;
   grub_uint32_t mle_size;
-  void *mle_ptab_mem;
+  void *mle_mem;
   grub_uint64_t mle_ptab_target;
   grub_uint32_t mle_ptab_size;
+  void *mle_ptab_mem;
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
@@ -52,6 +56,15 @@ struct grub_slaunch_params
 extern grub_uint32_t grub_slaunch_platform_type (void);
 extern void *grub_slaunch_module (void);
 extern struct grub_slaunch_params *grub_slaunch_params (void);
+
+extern void grub_slaunch_init_slrt_storage (int arch);
+extern void grub_slaunch_add_slrt_policy_entry (grub_uint16_t pcr,
+                                                grub_uint16_t entity_type,
+                                                grub_uint16_t flags,
+                                                grub_uint64_t entity,
+                                                grub_uint64_t size,
+                                                const char *evt_info);
+extern void grub_slaunch_finish_slr_table (void);
 
 #endif /* ASM_FILE */
 

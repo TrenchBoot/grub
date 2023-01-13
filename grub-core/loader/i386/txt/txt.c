@@ -59,6 +59,7 @@
 #include <grub/types.h>
 #include <grub/dl.h>
 #include <grub/acpi.h>
+#include <grub/slr_table.h>
 #include <grub/cpu/relocator.h>
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
@@ -73,6 +74,8 @@
 #define OS_SINIT_DATA_TPM_20_VER	7
 
 #define OS_SINIT_DATA_MIN_VER		OS_SINIT_DATA_TPM_12_VER
+
+static struct grub_slr_entry_intel_info slr_intel_info_staging = {0};
 
 static grub_err_t
 enable_smx_mode (void)
@@ -244,32 +247,38 @@ grub_txt_prepare_cpu (void)
 }
 
 static void
-save_mtrrs (struct grub_txt_os_mle_data *os_mle_data)
+save_mtrrs (struct grub_slr_txt_mtrr_state *saved_bsp_mtrrs)
 {
   grub_uint64_t i;
 
-  os_mle_data->saved_bsp_mtrrs.default_mem_type =
+  saved_bsp_mtrrs->default_mem_type =
     grub_rdmsr (GRUB_MSR_X86_MTRR_DEF_TYPE);
 
-  os_mle_data->saved_bsp_mtrrs.mtrr_vcnt =
+  saved_bsp_mtrrs->mtrr_vcnt =
     grub_rdmsr (GRUB_MSR_X86_MTRRCAP) & GRUB_MSR_X86_VCNT_MASK;
 
-  if (os_mle_data->saved_bsp_mtrrs.mtrr_vcnt > GRUB_SL_MAX_VARIABLE_MTRRS)
+  if (saved_bsp_mtrrs->mtrr_vcnt > GRUB_TXT_VARIABLE_MTRRS_LENGTH)
     {
       /* Print warning but continue saving what we can... */
       grub_printf ("WARNING: Actual number of variable MTRRs (%" PRIuGRUB_UINT64_T
 		   ") > GRUB_SL_MAX_VARIABLE_MTRRS (%d)\n",
-		   os_mle_data->saved_bsp_mtrrs.mtrr_vcnt,
-		   GRUB_SL_MAX_VARIABLE_MTRRS);
-      os_mle_data->saved_bsp_mtrrs.mtrr_vcnt = GRUB_SL_MAX_VARIABLE_MTRRS;
+		   saved_bsp_mtrrs->mtrr_vcnt,
+		   GRUB_TXT_VARIABLE_MTRRS_LENGTH);
+      saved_bsp_mtrrs->mtrr_vcnt = GRUB_TXT_VARIABLE_MTRRS_LENGTH;
     }
 
-  for (i = 0; i < os_mle_data->saved_bsp_mtrrs.mtrr_vcnt; ++i)
+  for (i = 0; i < saved_bsp_mtrrs->mtrr_vcnt; ++i)
     {
-      os_mle_data->saved_bsp_mtrrs.mtrr_pair[i].mtrr_physmask =
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physmask =
         grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + i * 2);
-      os_mle_data->saved_bsp_mtrrs.mtrr_pair[i].mtrr_physbase =
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physbase =
         grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSBASE0 + i * 2);
+    }
+  /* Zero unused array items. */
+  for ( ; i < GRUB_TXT_VARIABLE_MTRRS_LENGTH; ++i)
+    {
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physmask = 0;
+      saved_bsp_mtrrs->mtrr_pair[i].mtrr_physbase = 0;
     }
 }
 
@@ -535,6 +544,20 @@ grub_txt_init_tpm_event_log (void *buf, grub_size_t size)
   elog->next_event_offset = sizeof(*elog);
 }
 
+static void
+setup_txt_slrt_entry (struct grub_slaunch_params *slparams,
+                      struct grub_txt_os_mle_data *os_mle_data)
+{
+  struct grub_slr_table *slr_table = slparams->slr_table_mem;
+  struct grub_slr_entry_hdr *txt_info;
+
+  grub_slr_add_entry (slr_table, &slr_intel_info_staging.hdr);
+
+  txt_info = grub_slr_next_entry_by_tag (slr_table, NULL, GRUB_SLR_ENTRY_INTEL_INFO);
+  os_mle_data->txt_info = (grub_addr_t) slparams->slr_table_base
+      + ((grub_addr_t) txt_info - (grub_addr_t) slparams->slr_table_mem);
+}
+
 static grub_err_t
 init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header *sinit)
 {
@@ -567,16 +590,20 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   os_mle_data->version = GRUB_SL_OS_MLE_STRUCT_VERSION;
   os_mle_data->boot_params_addr = slparams->boot_params_addr;
-  os_mle_data->saved_misc_enable_msr = grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
+  os_mle_data->slrt = slparams->slr_table_base;
 
   os_mle_data->ap_wake_block = slparams->ap_wake_block;
   os_mle_data->ap_wake_block_size = slparams->ap_wake_block_size;
 
-  os_mle_data->evtlog_addr = slparams->tpm_evt_log_base;
-  os_mle_data->evtlog_size = slparams->tpm_evt_log_size;
+  /* Setup the TXT specific SLR information */
+  slr_intel_info_staging.hdr.tag = GRUB_SLR_ENTRY_INTEL_INFO;
+  slr_intel_info_staging.hdr.size = sizeof(struct grub_slr_entry_intel_info);
+  slr_intel_info_staging.saved_misc_enable_msr =
+               grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
 
+  /* Save the BSPs MTRR state so post launch can restore it. */
   grub_dprintf ("slaunch", "Saving MTRRs to OS MLE data\n");
-  save_mtrrs (os_mle_data);
+  save_mtrrs (&slr_intel_info_staging.saved_bsp_mtrrs);
 
   /* OS/loader to SINIT data. */
   grub_dprintf ("slaunch", "Get supported OS SINIT data version\n");
@@ -934,9 +961,10 @@ grub_err_t
 grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
 {
   grub_err_t err;
+  grub_uint8_t *txt_heap;
+  struct grub_txt_os_mle_data *os_mle_data;
   struct grub_txt_mle_header *mle_header;
   struct grub_txt_acm_header *sinit_base;
-  int i;
 
   sinit_base = grub_txt_sinit_select (grub_slaunch_module ());
 
@@ -952,24 +980,28 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   grub_dprintf ("slaunch", "TXT heap successfully prepared\n");
 
   /* Update the MLE header. */
-  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
+  mle_header =
+      (struct grub_txt_mle_header *) ((grub_uint8_t *) slparams->mle_mem + slparams->mle_header_offset);
   mle_header->first_valid_page = 0;
   mle_header->mle_end = slparams->mle_size;
 
   slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
   slparams->dce_size = sinit_base->size * 4;
 
-  /*
-   * Access to locality 4 isn't available to software, skip it. Don't bother
-   * checking TPM status, we have no tools for recovering from bad state better
-   * than command abort, which is part of locality relinquish. Write performed
-   * by the following function is no-op if locality is neither active nor
-   * requested.
-   */
-  for (i = 0; i < 4; ++i)
-    grub_tpm_relinquish_locality (i);
+  /* Setup of SLR table. */
+  grub_slaunch_init_slrt_storage (GRUB_SLR_INTEL_TXT);
+  txt_heap = grub_txt_get_heap ();
+  os_mle_data = grub_txt_os_mle_data_start (txt_heap);
+  setup_txt_slrt_entry (slparams, os_mle_data);
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_TXT_OS2MLE,
+                                      /*flags=*/0,
+                                      (grub_addr_t) os_mle_data,
+                                      sizeof(*os_mle_data),
+                                      "Measured TXT OS-MLE data");
 
-  grub_dprintf ("slaunch", "TPM localities relinquished\n");
+  grub_tpm_relinquish_locality (0);
+  grub_dprintf ("slaunch", "Relinquished TPM locality 0\n");
 
   err = set_mtrrs_for_acmod (sinit_base);
   if (err)

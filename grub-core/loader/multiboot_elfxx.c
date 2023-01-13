@@ -164,6 +164,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	  return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
 #else
 	  slparams->mle_start = mld->load_base_addr;
+	  slparams->mle_mem = source;
 
 	  err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
 						       GRUB_MEMORY_MACHINE_UPPER_START,

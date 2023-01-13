@@ -39,6 +39,7 @@
 #include <grub/linux.h>
 #include <grub/machine/kernel.h>
 #include <grub/safemath.h>
+#include <grub/slr_table.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -68,6 +69,18 @@ GRUB_MOD_LICENSE ("GPLv3+");
 /* See kernel_info in Documentation/arch/x86/boot.rst in the kernel tree */
 #define KERNEL_INFO_HEADER		"LToP"
 #define KERNEL_INFO_MIN_SIZE_TOTAL	12
+
+struct linux_params_efi_info
+{
+  grub_uint32_t efi_signature;
+  grub_uint32_t efi_system_table;
+  grub_uint32_t efi_mem_desc_size;
+  grub_uint32_t efi_mem_desc_version;
+  grub_uint32_t efi_mmap;
+  grub_uint32_t efi_mmap_size;
+  grub_uint32_t efi_system_table_hi;
+  grub_uint32_t efi_mmap_hi;
+};
 
 static grub_dl_t my_mod;
 
@@ -248,16 +261,35 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 
 	slparams->mle_start = prot_mode_target;
 	slparams->mle_size = prot_size;
+	slparams->mle_mem = prot_mode_mem;
 
 	grub_dprintf ("linux", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
 		      slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
 		      (unsigned) slparams->mle_ptab_size);
 
-	if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
-					      0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
-					      GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
-					      GRUB_RELOCATOR_PREFERENCE_NONE, 1))
-	  goto fail;
+        err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                                0xffffffff - GRUB_PAGE_SIZE,
+                                                GRUB_PAGE_SIZE, GRUB_PAGE_SIZE,
+                                                GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+        if (err)
+            goto fail;
+
+	slparams->slr_table_base = get_physical_target_address (ch);
+	slparams->slr_table_size = GRUB_PAGE_SIZE;
+	slparams->slr_table_mem = get_virtual_current_address (ch);
+
+	grub_memset (slparams->slr_table_mem, 0, slparams->slr_table_size);
+
+	grub_dprintf ("linux", "slr_table_base = %lx, slr_table_size = %x\n",
+		      (unsigned long) slparams->slr_table_base,
+		      (unsigned) slparams->slr_table_size);
+
+        err = grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+                                                0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
+                                                GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+                                                GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+        if (err)
+            goto fail;
 
 	slparams->tpm_evt_log_base = get_physical_target_address (ch);
 	slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
@@ -468,6 +500,60 @@ grub_linux_boot_mmap_fill (grub_uint64_t addr, grub_uint64_t size,
   return 0;
 }
 
+static void
+grub_linux_setup_slr_table (struct grub_slaunch_params *slparams)
+{
+  struct linux_kernel_params *boot_params = (void *) (grub_addr_t) slparams->boot_params_addr;
+  struct linux_params_efi_info *efi_info;
+
+  /* A bit of work to extract the v2.08 EFI info from the linux params */
+  efi_info = (void *)((grub_uint8_t *)&boot_params->v0208 + 2*sizeof(grub_uint32_t));
+
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_BOOT_PARAMS,
+                                      /*flags=*/0,
+                                      (grub_addr_t) boot_params,
+                                      GRUB_PAGE_SIZE,
+                                      "Measured boot parameters");
+
+  if (boot_params->setup_data)
+      grub_slaunch_add_slrt_policy_entry (18,
+                                          GRUB_SLR_ET_SETUP_DATA,
+                                          GRUB_SLR_POLICY_IMPLICIT_SIZE,
+                                          boot_params->setup_data,
+                                          /*size=*/0,
+                                          "Measured Kernel setup_data");
+
+  /* TODO the cmdline ptr can have hi bits but for now assume always < 4G */
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_CMDLINE,
+                                      /*flags=*/0,
+                                      boot_params->cmd_line_ptr,
+                                      boot_params->cmdline_size,
+                                      "Measured Kernel command line");
+
+  if (!grub_memcmp(&efi_info->efi_signature, "EL64", sizeof(grub_uint32_t)))
+    {
+      grub_uint64_t mmap_addr =
+        ((grub_uint64_t) efi_info->efi_mmap_hi << 32) | efi_info->efi_mmap;
+      grub_slaunch_add_slrt_policy_entry (18,
+                                          GRUB_SLR_ET_UEFI_MEMMAP,
+                                          /*flags=*/0,
+                                          mmap_addr,
+                                          efi_info->efi_mmap_size,
+                                          "Measured EFI memory map");
+    }
+
+  if (boot_params->ramdisk_image)
+      /* TODO the initrd image and size can have hi bits but for now assume always < 4G */
+      grub_slaunch_add_slrt_policy_entry (17,
+                                          GRUB_SLR_ET_RAMDISK,
+                                          /*flags=*/0,
+                                          boot_params->ramdisk_image,
+                                          boot_params->ramdisk_size,
+                                          "Measured Kernel initrd");
+}
+
 static grub_err_t
 grub_linux_boot (void)
 {
@@ -645,6 +731,9 @@ grub_linux_boot (void)
       grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
 		    (unsigned long) slparams->ap_wake_block,
 		    (unsigned long) ap_wake_block_size);
+
+      /* Grab the real mode target address, this is the boot params page. */
+      slparams->boot_params_addr = ctx.real_mode_target;
     }
 
   grub_dprintf ("linux", "real_mode_mem = %p\n",
@@ -672,6 +761,8 @@ grub_linux_boot (void)
     grub_efi_uint32_t efi_desc_version;
 
     ctx.params->secure_boot = grub_efi_get_secureboot ();
+
+    grub_dprintf ("linux", "EFI exit boot services\n");
 
     err = grub_efi_finish_boot_services (&efi_mmap_size, efi_mmap_buf, NULL,
 					 &efi_desc_size, &efi_desc_version);
@@ -714,12 +805,13 @@ grub_linux_boot (void)
 
   if (state.edi == SLP_INTEL_TXT)
     {
-      slparams->boot_params_addr = (grub_uint32_t) ctx.real_mode_target;
-
       err = grub_txt_boot_prepare (slparams);
 
       if (err != GRUB_ERR_NONE)
 	return err;
+
+      grub_linux_setup_slr_table (slparams);
+      grub_slaunch_finish_slr_table ();
 
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;

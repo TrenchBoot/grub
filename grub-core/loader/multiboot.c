@@ -179,6 +179,8 @@ normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 	  return;
 	}
 
+      grub_slaunch_finish_slr_table ();
+
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;
       state.ebx = slparams->dce_base;
