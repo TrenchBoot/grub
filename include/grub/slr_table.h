@@ -115,6 +115,7 @@ struct grub_slr_entry_dl_info
   struct grub_slr_entry_hdr hdr;
   struct grub_slr_bl_context bl_context;
   grub_uint64_t dl_handler;
+  struct grub_slr_bl_context bl_context;
   grub_uint64_t dce_base;
   grub_uint32_t dce_size;
   grub_uint64_t dlme_entry;

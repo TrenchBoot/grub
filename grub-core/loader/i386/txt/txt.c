@@ -61,6 +61,7 @@
 #include <grub/acpi.h>
 #include <grub/slr_table.h>
 #include <grub/cpu/relocator.h>
+#include <grub/i386/relocator.h>
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/crfr.h>
@@ -467,8 +468,8 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
  * this must be done for each processor so that all have the same
  * memory types
  */
-static grub_err_t
-set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
+grub_err_t
+grub_set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr)
 {
   unsigned long eflags;
   unsigned long cr0, cr4;
@@ -555,7 +556,7 @@ setup_slrt_policy (struct grub_slaunch_params *slparams,
   struct grub_slr_policy_entry *entry =
     (struct grub_slr_policy_entry *)((grub_uint8_t *)slr_policy_staging +
                                      sizeof(struct grub_slr_entry_policy));
-  struct linux_kernel_params *boot_params = slparams->params;
+  struct linux_kernel_params *boot_params = slparams->boot_params;
   struct grub_efi_info *efi_info;
 
   /* A bit of work to extract the v2.08 EFI info from the linux params */
@@ -692,7 +693,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   grub_memset (os_mle_data, 0, sizeof (*os_mle_data));
 
   os_mle_data->version = GRUB_SL_OS_MLE_STRUCT_VERSION;
-  os_mle_data->boot_params_addr = (grub_uint32_t)(grub_addr_t) slparams->params;
+  os_mle_data->boot_params_addr = (grub_uint32_t)(grub_addr_t) slparams->boot_params;
   os_mle_data->slrt = slparams->slr_table_base;
 
   os_mle_data->ap_wake_block = slparams->ap_wake_block;
@@ -1064,7 +1065,10 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
   slparams->dce_size = sinit_base->size * 4;
 
-  /* Setup DCE and DLME information */
+  /* Setup DL entry point, DCE and DLME information */
+  slr_dl_info_staging.dl_handler = (grub_uint64_t)dl_entry;
+  slr_dl_info_staging.bl_context.bootloader = GRUB_SLR_BOOTLOADER_GRUB;
+  slr_dl_info_staging.bl_context.context = (grub_uint64_t)slparams;
   slr_dl_info_staging.dce_base = slparams->dce_base;
   slr_dl_info_staging.dce_size = slparams->dce_size;
   slr_dl_info_staging.dlme_entry = mle_header->entry_point;
@@ -1076,17 +1080,6 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   set_txt_info_ptr (slparams, os_mle_data);
 
   grub_tpm_relinquish_lcl (0);
-
-  err = set_mtrrs_for_acmod (sinit_base);
-  if (err)
-    return grub_error (err, N_("secure launch failed to set MTRRs for ACM"));
-
-  err = grub_txt_prepare_cpu ();
-  if ( err )
-    return err;
-
-  if (!(grub_rdmsr (GRUB_MSR_X86_APICBASE) & GRUB_MSR_X86_APICBASE_BSP))
-    return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
 
   return GRUB_ERR_NONE;
 }

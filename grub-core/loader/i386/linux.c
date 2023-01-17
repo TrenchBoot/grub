@@ -31,6 +31,7 @@
 #include <grub/video.h>
 #include <grub/video_fb.h>
 #include <grub/command.h>
+#include <grub/slr_table.h>
 #include <grub/i386/relocator.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
@@ -239,6 +240,8 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 
     if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
       {
+        slparams.relocator = relocator;
+
 	slparams.mle_ptab_mem = prot_mode_mem;
 	slparams.mle_ptab_target = prot_mode_target;
 
@@ -811,32 +814,33 @@ grub_linux_boot (void)
   }
 #endif
 
-  state.edi = grub_slaunch_platform_type ();
-
-  if (state.edi == SLP_INTEL_TXT)
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      slparams.params = ctx.params;
+      slparams.boot_params = ctx.params;
+      struct grub_slr_table *slrt = (struct grub_slr_table *)slparams.slr_table_mem;
+      struct grub_slr_entry_dl_info *dlinfo;
+      dl_entry_func *dlfunc;
 
       err = grub_txt_boot_prepare (&slparams);
-
       if (err != GRUB_ERR_NONE)
 	return err;
 
-      /* Configure relocator GETSEC[SENTER] call. */
-      state.eax = GRUB_SMX_LEAF_SENTER;
-      state.ebx = slparams.dce_base;
-      state.ecx = slparams.dce_size;
-      state.edx = 0;
+      dlinfo = (struct grub_slr_entry_dl_info *)
+                       grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
+      dlfunc = (dl_entry_func *)dlinfo->dl_handler;
+
+      dlfunc ((grub_uint64_t)&dlinfo->bl_context);
+      /* If this returns, something failed miserably */
+      return GRUB_ERR_BAD_DEVICE;
     }
-  else
-    {
-      /* FIXME.  */
-      /*  asm volatile ("lidt %0" : : "m" (idt_desc)); */
-      state.ebp = state.edi = state.ebx = 0;
-      state.esi = ctx.real_mode_target;
-      state.esp = ctx.real_mode_target;
-      state.eip = ctx.params->code32_start;
-    }
+
+  /* Standard Linux launch */
+  /* FIXME.  */
+  /*  asm volatile ("lidt %0" : : "m" (idt_desc)); */
+  state.ebp = state.edi = state.ebx = 0;
+  state.esi = ctx.real_mode_target;
+  state.esp = ctx.real_mode_target;
+  state.eip = ctx.params->code32_start;
 
   return grub_relocator32_boot (relocator, state, 0);
 }

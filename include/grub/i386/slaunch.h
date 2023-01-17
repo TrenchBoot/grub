@@ -36,7 +36,8 @@
 
 struct grub_slaunch_params
 {
-  struct linux_kernel_params *params;
+  struct linux_kernel_params *boot_params;
+  struct grub_relocator *relocator;
   grub_uint64_t slr_table_base;
   grub_uint32_t slr_table_size;
   void *slr_table_mem;
@@ -57,6 +58,10 @@ struct grub_slaunch_params
 
 extern grub_uint32_t grub_slaunch_platform_type (void);
 extern void *grub_slaunch_module (void);
+
+typedef void (dl_entry_func) (grub_uint64_t);
+
+void dl_entry(grub_uint64_t dl_ctx);
 
 #endif /* ASM_FILE */
 
