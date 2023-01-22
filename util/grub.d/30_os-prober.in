@@ -27,7 +27,6 @@ export TEXTDOMAINDIR="@localedir@"
 . "$pkgdatadir/grub-mkconfig_lib"
 
 if [ "x${GRUB_DISABLE_OS_PROBER}" = "xtrue" ]; then
-  grub_warn "$(gettext_printf "os-prober will not be executed to detect other bootable partitions.\nSystems on them will not be added to the GRUB boot configuration.\nCheck GRUB_DISABLE_OS_PROBER documentation entry.")"
   exit 0
 fi
 
