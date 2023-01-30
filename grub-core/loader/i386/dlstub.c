@@ -33,6 +33,8 @@
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
+extern void dl_trampoline(grub_uint32_t dce_base, grub_uint32_t dce_size);
+
 void dl_entry (grub_uint64_t dl_ctx)
 {
   struct grub_slr_bl_context *bl_ctx = (struct grub_slr_bl_context *)dl_ctx;
@@ -40,11 +42,11 @@ void dl_entry (grub_uint64_t dl_ctx)
   struct grub_relocator32_state state;
   grub_err_t err;
 
-  state.edi = grub_slaunch_platform_type ();
+  state.edi = slparams->platform_type;
 
   if (state.edi == SLP_INTEL_TXT)
     {
-      err = grub_set_mtrrs_for_acmod (slparams->dce_base);
+      err = grub_set_mtrrs_for_acmod ((void *)slparams->dce_base);
       if (err)
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("setting MTRRs for TXT SINIT failed"));
@@ -65,11 +67,16 @@ void dl_entry (grub_uint64_t dl_ctx)
       return;
     }
 
-  /* Configure relocator GETSEC[SENTER] call. */
-  state.eax = GRUB_SMX_LEAF_SENTER;
-  state.ebx = slparams->dce_base;
-  state.ecx = slparams->dce_size;
-  state.edx = 0;
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX)
+    {
+      /* Configure relocator GETSEC[SENTER] call. */
+      state.eax = GRUB_SMX_LEAF_SENTER;
+      state.ebx = slparams->dce_base;
+      state.ecx = slparams->dce_size;
+      state.edx = 0;
+      grub_relocator32_boot (slparams->relocator, state, 0);
+    }
+  else /* GRUB_SL_BOOT_TYPE_EFI */
+    dl_trampoline (slparams->dce_base, slparams->dce_size);
 
-  grub_relocator32_boot (slparams->relocator, state, 0);
 }

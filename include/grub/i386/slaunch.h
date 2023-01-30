@@ -34,8 +34,14 @@
 #include <grub/i386/linux.h>
 #include <grub/types.h>
 
+#define GRUB_SL_BOOT_TYPE_INVALID	0
+#define GRUB_SL_BOOT_TYPE_LINUX		1
+#define GRUB_SL_BOOT_TYPE_EFI		2
+
 struct grub_slaunch_params
 {
+  grub_uint32_t boot_type;
+  grub_uint32_t platform_type;
   struct linux_kernel_params *boot_params;
   struct grub_relocator *relocator;
   grub_uint64_t slr_table_base;
@@ -49,17 +55,14 @@ struct grub_slaunch_params
   grub_uint32_t mle_header_offset;
   grub_uint32_t ap_wake_block;
   grub_uint32_t ap_wake_block_size;
-  grub_uint32_t dce_base;
+  grub_uint64_t dce_base;
   grub_uint32_t dce_size;
   grub_uint64_t tpm_evt_log_base;
   grub_uint32_t tpm_evt_log_size;
-  grub_uint32_t boot_params_base;
 };
 
 extern grub_uint32_t grub_slaunch_platform_type (void);
 extern void *grub_slaunch_module (void);
-
-typedef void (dl_entry_func) (grub_uint64_t);
 
 void dl_entry(grub_uint64_t dl_ctx);
 

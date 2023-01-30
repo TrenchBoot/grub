@@ -24,9 +24,11 @@
 #include <grub/cpu/linux.h>
 #include <grub/command.h>
 #include <grub/i18n.h>
+#include <grub/slr_table.h>
 #include <grub/lib/cmdline.h>
 #include <grub/efi/efi.h>
 #include <grub/efi/linux.h>
+#include <grub/i386/slaunch.h>
 #include <grub/cpu/efi/memory.h>
 #include <grub/tpm.h>
 #include <grub/safemath.h>
@@ -38,6 +40,10 @@ static grub_dl_t my_mod;
 static grub_command_t cmd_linux, cmd_initrd;
 static grub_command_t cmd_linuxefi, cmd_initrdefi;
 
+#define GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_EFI_PAGE_SIZE)
+#define GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE		(4 * GRUB_EFI_PAGE_SIZE)
+static struct grub_slaunch_params slparams = {0};
+
 struct grub_linuxefi_context {
   void *kernel_mem;
   grub_uint64_t kernel_size;
@@ -47,6 +53,8 @@ struct grub_linuxefi_context {
   int nx_supported;
   void *initrd_mem;
 };
+
+#define OFFSET_OF(x, y) ((grub_size_t)((grub_uint8_t *)(&(y)->x) - (grub_uint8_t *)(y)))
 
 #define MIN(a, b) \
   ({ typeof (a) _a = (a); \
@@ -96,6 +104,13 @@ static struct allocation_choice saved_addresses[4];
 
 #define save_addresses() grub_memcpy(saved_addresses, max_addresses, sizeof(max_addresses))
 #define restore_addresses() grub_memcpy(max_addresses, saved_addresses, sizeof(max_addresses))
+
+/* TODO define extern here since bringing in txt.h causes issues */
+#define GRUB_TXT_PMR_ALIGN_SHIFT	21
+#define GRUB_TXT_PMR_ALIGN		(1 << GRUB_TXT_PMR_ALIGN_SHIFT)
+extern grub_uint32_t grub_txt_get_mle_ptab_size (grub_uint32_t mle_size);
+extern void grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams);
+extern grub_err_t grub_txt_boot_prepare (struct grub_slaunch_params *slparams);
 
 static inline void
 kernel_free(void *addr, grub_efi_uintn_t size)
@@ -233,6 +248,37 @@ read(grub_file_t file, grub_uint8_t *bufp, grub_size_t len)
   return bufpos;
 }
 
+static void grub_slaunch_update_slrt_policy (struct linux_kernel_params *params)
+{
+  struct grub_slr_table *slrt = (struct grub_slr_table *)slparams.slr_table_base;
+  struct grub_slr_entry_policy *slr_policy;
+  struct grub_slr_policy_entry *entry;
+  grub_uint16_t i;
+
+  slr_policy = (struct grub_slr_entry_policy *)
+    grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_ENTRY_POLICY);
+
+  if (!slr_policy)
+    grub_error (GRUB_ERR_BAD_ARGUMENT, N_("SLRT missing security policy"));
+
+  entry = (struct grub_slr_policy_entry *)((grub_uint8_t *)slr_policy +
+           sizeof(struct grub_slr_entry_policy));
+
+  for (i = 0; i < slr_policy->nr_entries; i++, entry++)
+    {
+      if (entry->entity_type == GRUB_SLR_ET_UNUSED)
+        {
+          entry->pcr = 17;
+          entry->entity_type = GRUB_SLR_ET_RAMDISK;
+          /* TODO the initrd image and size can have hi bits but for now assume always < 32G */
+          entry->entity = params->ramdisk_image;
+          entry->size = params->ramdisk_size;
+          grub_strcpy (&entry->evt_info[0], "Measured Kernel initrd");
+          break;
+        }
+    }
+}
+
 #define LOW_U32(val) ((grub_uint32_t)(((grub_addr_t)(val)) & 0xffffffffull))
 #define HIGH_U32(val) ((grub_uint32_t)(((grub_addr_t)(val) >> 32) & 0xffffffffull))
 
@@ -292,6 +338,9 @@ grub_cmd_initrd (grub_command_t cmd, int argc, char *argv[])
   params->ext_ramdisk_image = HIGH_U32(initrd_mem);
 #endif
 
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    grub_slaunch_update_slrt_policy (params);
+
   ptr = initrd_mem;
 
   for (i = 0; i < nfiles; i++)
@@ -342,6 +391,9 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   int nx_supported = 1;
   struct grub_linuxefi_context *context = 0;
   grub_err_t err;
+  grub_uint8_t *slmem = NULL;
+  grub_uint32_t slmem_size =
+     GRUB_EFI_PAGE_SIZE + GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE + GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE;
 
   grub_dl_ref (my_mod);
 
@@ -375,6 +427,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 					 &nx_supported);
   if (err != GRUB_ERR_NONE)
     return err;
+
   grub_dprintf ("linux", "nx is%s supported by this kernel\n",
 		nx_supported ? "" : " not");
 
@@ -492,6 +545,33 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
     }
 #endif
 
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      slparams.boot_type = GRUB_SL_BOOT_TYPE_EFI;
+      slparams.boot_params = params;
+
+      slmem = grub_efi_allocate_pages_real (GRUB_EFI_MAX_ALLOCATION_ADDRESS,
+                                            slmem_size,
+                                            GRUB_EFI_ALLOCATE_MAX_ADDRESS,
+                                            GRUB_EFI_LOADER_DATA);
+      if (!slmem)
+        goto fail;
+
+      grub_update_mem_attrs ((grub_addr_t)slmem, slmem_size,
+				 GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_W,
+				 GRUB_MEM_ATTR_X);
+
+      slparams.slr_table_base = (grub_uint64_t)slmem;
+      slparams.slr_table_size = GRUB_EFI_PAGE_SIZE;
+      slparams.slr_table_mem = slmem;
+
+      slparams.tpm_evt_log_base = (grub_uint64_t)(slmem + GRUB_EFI_PAGE_SIZE);
+      slparams.tpm_evt_log_size = GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+      slparams.ap_wake_block = (grub_uint32_t)(grub_uint64_t)(slmem + GRUB_EFI_PAGE_SIZE + GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE);
+      slparams.ap_wake_block_size = GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE;
+    }
+
   handover_offset = lh->handover_offset;
   grub_dprintf("linux", "handover_offset: 0x%08x\n", handover_offset);
 
@@ -528,6 +608,63 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   lh->code32_start = LOW_U32(kernel_mem);
 
   grub_memcpy (kernel_mem, (char *)kernel + start, filelen - start);
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      struct grub_efi_guid slrt_guid = GRUB_UEFI_SLR_TABLE_GUID;
+      struct linux_kernel_info kernel_info;
+      grub_efi_physical_address_t requested;
+      grub_efi_boot_services_t *b;
+      void *addr;
+
+      /* Allocate page tables for TXT just in front of the kernel image */
+      slparams.mle_ptab_size = grub_txt_get_mle_ptab_size (kernel_size);
+      slparams.mle_ptab_size = ALIGN_UP (slparams.mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+      requested = ALIGN_UP (((grub_uint64_t)kernel_mem - slparams.mle_ptab_size),
+                            GRUB_TXT_PMR_ALIGN);
+
+      addr = grub_efi_allocate_pages_real (requested,
+                                           slparams.mle_ptab_size/GRUB_EFI_PAGE_SIZE,
+                                           GRUB_EFI_ALLOCATE_ADDRESS,
+                                           GRUB_EFI_LOADER_DATA);
+      if (!addr)
+        goto fail;
+
+      grub_update_mem_attrs ((grub_addr_t)addr, slparams.mle_ptab_size/GRUB_EFI_PAGE_SIZE,
+				 GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_W,
+				 GRUB_MEM_ATTR_X);
+
+      slparams.mle_ptab_mem = addr;
+      slparams.mle_ptab_target = (grub_uint64_t)addr;
+
+      slparams.mle_start = (grub_uint64_t)kernel_mem;
+      slparams.mle_size = kernel_size;
+
+      /* Setup the TXT ACM page tables */
+      grub_txt_setup_mle_ptab (&slparams);
+
+      /* Locate the MLE header offset in kernel_info section */
+      grub_memcpy ((void *)&kernel_info,
+                   (char *)kernel + start + grub_le_to_cpu32 (lh->kernel_info_offset),
+                   sizeof (struct linux_kernel_info));
+
+      if (OFFSET_OF (mle_header_offset, &kernel_info) >=
+                     grub_le_to_cpu32 (kernel_info.size))
+        {
+          grub_error (GRUB_ERR_BAD_OS, N_("not slaunch kernel: lack of mle_header_offset"));
+          goto fail;
+        }
+
+      slparams.mle_header_offset = grub_le_to_cpu32 (kernel_info.mle_header_offset);
+
+      /* Final stage for secure launch, setup TXT and install the SLR table */
+      err = grub_txt_boot_prepare (&slparams);
+      if (err != GRUB_ERR_NONE)
+	goto fail;
+
+      b = grub_efi_system_table->boot_services;
+      efi_call_2 (b->install_configuration_table, &slrt_guid, (void *)slparams.slr_table_base);
+    }
 
   lh->type_of_loader = 0x6;
   grub_dprintf ("linux", "setting lh->type_of_loader = 0x%02x\n",
@@ -571,6 +708,12 @@ fail:
 
   kernel_free (kernel_mem, kernel_size);
   kernel_free (params, sizeof(*params));
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      kernel_free (slmem, slmem_size);
+      kernel_free (slparams.mle_ptab_mem, slparams.mle_ptab_size);
+    }
 
   grub_free (context);
   grub_free (kernel);

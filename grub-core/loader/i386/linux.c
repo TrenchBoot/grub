@@ -92,7 +92,7 @@ static grub_efi_uintn_t efi_mmap_size;
 #else
 static const grub_size_t efi_mmap_size = 0;
 #endif
-static struct grub_slaunch_params slparams;
+static struct grub_slaunch_params slparams = {0};
 
 /* FIXME */
 #if 0
@@ -737,6 +737,8 @@ grub_linux_boot (void)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
+      slparams.boot_type = GRUB_SL_BOOT_TYPE_LINUX;
+
       slparams.ap_wake_block = ctx.real_mode_target + ctx.real_size + efi_mmap_size;
       slparams.ap_wake_block_size = ap_wake_block_size;
       grub_memset ((void *) ((grub_addr_t) real_mode_mem + ctx.real_size +
@@ -744,9 +746,6 @@ grub_linux_boot (void)
       grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
 		    (unsigned long) slparams.ap_wake_block,
 		    (unsigned long) ap_wake_block_size);
-
-      /* Grab the real mode target address, this is the boot params page */
-      slparams.boot_params_base = ctx.real_mode_target;
     }
 
   grub_dprintf ("linux", "real_mode_mem = %p\n",
@@ -819,7 +818,6 @@ grub_linux_boot (void)
       slparams.boot_params = ctx.params;
       struct grub_slr_table *slrt = (struct grub_slr_table *)slparams.slr_table_mem;
       struct grub_slr_entry_dl_info *dlinfo;
-      dl_entry_func *dlfunc;
 
       err = grub_txt_boot_prepare (&slparams);
       if (err != GRUB_ERR_NONE)
@@ -827,9 +825,8 @@ grub_linux_boot (void)
 
       dlinfo = (struct grub_slr_entry_dl_info *)
                        grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
-      dlfunc = (dl_entry_func *)dlinfo->dl_handler;
+      dl_entry ((grub_uint64_t)&dlinfo->bl_context);
 
-      dlfunc ((grub_uint64_t)&dlinfo->bl_context);
       /* If this returns, something failed miserably */
       return GRUB_ERR_BAD_DEVICE;
     }
@@ -985,12 +982,18 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
       prot_init_space = page_align (prot_size) * 3;
     }
 
+  grub_dprintf ("linux", "before align=%d, min_align=%d\n",
+                align, min_align);
+
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
       /* PMRs require GRUB_TXT_PMR_ALIGN_SHIFT aligments. */
       min_align = grub_max (min_align, GRUB_TXT_PMR_ALIGN_SHIFT);
       align = grub_max (align, GRUB_TXT_PMR_ALIGN_SHIFT);
     }
+
+  grub_dprintf ("linux", "after align=%d, min_align=%d\n",
+                align, min_align);
 
   if (allocate_pages (prot_size, &align,
 		      min_align, relocatable,

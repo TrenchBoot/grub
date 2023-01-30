@@ -76,7 +76,6 @@
 
 #define OS_SINIT_DATA_MIN_VER		OS_SINIT_DATA_TPM_12_VER
 
-#define SLR_CURRENT_REVISION		1
 #define SLR_MAX_POLICY_ENTRIES		7
 
 struct grub_efi_info
@@ -98,7 +97,9 @@ static struct grub_slr_entry_log_info slr_log_info_staging = {0};
 static struct grub_slr_entry_policy *slr_policy_staging =
     (struct grub_slr_entry_policy *)slr_policy_buf;
 static struct grub_slr_entry_intel_info slr_intel_info_staging = {0};
-struct grub_slr_entry_hdr slr_end_staging;
+
+extern void dl_entry_trampoline(void);
+
 
 static grub_err_t
 enable_smx_mode (void)
@@ -259,7 +260,7 @@ grub_txt_prepare_cpu (void)
 }
 
 static void
-save_mtrrs (struct grub_txt_mtrr_state *saved_bsp_mtrrs)
+save_mtrrs (struct grub_slr_txt_mtrr_state *saved_bsp_mtrrs)
 {
   grub_uint64_t i;
 
@@ -539,14 +540,11 @@ init_slrt_storage (void)
   slr_policy_staging->hdr.tag = GRUB_SLR_ENTRY_ENTRY_POLICY;
   slr_policy_staging->hdr.size = sizeof(struct grub_slr_entry_policy) +
     SLR_MAX_POLICY_ENTRIES*sizeof(struct grub_slr_policy_entry);
-  slr_policy_staging->revision = SLR_CURRENT_REVISION;
+  slr_policy_staging->revision = GRUB_SLR_POLICY_REVISION;
   slr_policy_staging->nr_entries = SLR_MAX_POLICY_ENTRIES;
 
   slr_intel_info_staging.hdr.tag = GRUB_SLR_ENTRY_INTEL_INFO;
   slr_intel_info_staging.hdr.size = sizeof(struct grub_slr_entry_intel_info);
-
-  slr_end_staging.tag = GRUB_SLR_ENTRY_END;
-  slr_end_staging.size = sizeof(struct grub_slr_entry_hdr);
 }
 
 static void
@@ -604,7 +602,7 @@ setup_slrt_policy (struct grub_slaunch_params *slparams,
       grub_uint64_t mmap_hi;
 
       entry->pcr = 18;
-      entry->entity_type = GRUB_SLR_ET_EFI_MEMMAP;
+      entry->entity_type = GRUB_SLR_ET_UEFI_MEMMAP;
       entry->entity = efi_info->efi_mmap;
       mmap_hi =  efi_info->efi_mmap_hi;
       entry->entity |= mmap_hi << 32;
@@ -618,7 +616,7 @@ setup_slrt_policy (struct grub_slaunch_params *slparams,
   if (boot_params->ramdisk_image)
     {
       entry->pcr = 17;
-      entry->entity_type = GRUB_SLR_ET_INITRD;
+      entry->entity_type = GRUB_SLR_ET_RAMDISK;
       /* TODO the initrd image and size can have hi bits but for now assume always < 32G */
       entry->entity = boot_params->ramdisk_image;
       entry->size = boot_params->ramdisk_size;
@@ -646,8 +644,6 @@ setup_slr_table (struct grub_slaunch_params *slparams)
                       (struct grub_slr_entry_hdr *)slr_policy_staging);
   grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
                       (struct grub_slr_entry_hdr *)&slr_intel_info_staging);
-  grub_slr_add_entry ((struct grub_slr_table *)slparams->slr_table_base,
-                       &slr_end_staging);
 }
 
 static void
@@ -675,7 +671,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 #ifdef GRUB_MACHINE_EFI
   struct grub_acpi_rsdp_v20 *rsdp;
 #endif
-  struct grub_txt_mtrr_state saved_mtrrs_state = {0};
+  struct grub_slr_txt_mtrr_state saved_mtrrs_state = {0};
 
   /* BIOS data already verified in grub_txt_verify_platform(). */
 
@@ -712,7 +708,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   slr_intel_info_staging.saved_misc_enable_msr =
                grub_rdmsr (GRUB_MSR_X86_MISC_ENABLE);
   grub_memcpy (&(slr_intel_info_staging.saved_bsp_mtrrs), &saved_mtrrs_state,
-               sizeof(struct grub_txt_mtrr_state));
+               sizeof(struct grub_slr_txt_mtrr_state));
 
   /* Create the SLR security policy */
   setup_slrt_policy (slparams, os_mle_data);
@@ -1047,6 +1043,8 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   /* Setup the generic bits of the SLRT */
   grub_slr_init_table(slrt, GRUB_SLR_INTEL_TXT, slparams->slr_table_size);
 
+  slparams->platform_type = grub_slaunch_platform_type ();
+
   sinit_base = grub_txt_sinit_select (grub_slaunch_module ());
 
   if (sinit_base == NULL)
@@ -1066,9 +1064,9 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   slparams->dce_size = sinit_base->size * 4;
 
   /* Setup DL entry point, DCE and DLME information */
-  slr_dl_info_staging.dl_handler = (grub_uint64_t)dl_entry;
   slr_dl_info_staging.bl_context.bootloader = GRUB_SLR_BOOTLOADER_GRUB;
   slr_dl_info_staging.bl_context.context = (grub_uint64_t)slparams;
+  slr_dl_info_staging.dl_handler = (grub_uint64_t)dl_entry_trampoline;
   slr_dl_info_staging.dce_base = slparams->dce_base;
   slr_dl_info_staging.dce_size = slparams->dce_size;
   slr_dl_info_staging.dlme_entry = mle_header->entry_point;
