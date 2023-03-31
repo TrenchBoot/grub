@@ -1,0 +1,58 @@
+These are the steps to build grub-sl-fc-38-dlstub on Fedora/RHEL:
+
+Step 1:
+
+export CFLAGS='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches  -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -fPIC'
+export CXXFLAGS='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches  -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -fPIC'
+export FFLAGS='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches  -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I/usr/lib/gfortran/modules -fPIC'
+export FCFLAGS='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches  -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I/usr/lib/gfortran/modules -fPIC'
+
+export LDFLAGS='-Wl,-z,relro'
+
+Step 2:
+
+./bootstrap
+
+Step 3:
+
+bootstrap creates:
+grub-core/lib/gnulib/Makefile.am
+
+Make the following change:
+
+diff --git a/grub-core/lib/gnulib/Makefile.am b/grub-core/lib/gnulib/Makefile.am
+index b7c5e60e1..bd3621930 100644
+--- a/grub-core/gnulib/Makefile.am
++++ b/grub-core/gnulib/Makefile.am
+@@ -38,8 +38,8 @@ CLEANFILES =
+ DISTCLEANFILES =
+ MAINTAINERCLEANFILES =
+.
+-AM_CPPFLAGS =
+-AM_CFLAGS =
++AM_CPPFLAGS = $(HOST_CPPFLAGS)
++AM_CFLAGS = $(HOST_CFLAGS)
+
+Step 4:
+
+./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info 'HOST_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fPIC -fPIE' HOST_CPPFLAGS=-I./ 'HOST_LDFLAGS=-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld' 'TARGET_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -fPIC -fPIE' TARGET_CPPFLAGS=-I./ 'TARGET_LDFLAGS=-Wl,-z,relro -static' --with-platform=efi --with-utils=host --target=x86_64-redhat-linux-gnu --with-grubdir=grub2 --program-transform-name=s,grub,grub2, --disable-grub-mount --with-debug-timestamps --enable-boot-time --disable-werror --enable-rpm-sort=no
+
+Step 5:
+
+make
+
+The `make` step will produce grub-mkimage binary, which you can use to build EFI binary
+
+Step 6:
+
+Make this file in the root dir of grub:
+
+sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+grub,2,Free Software Foundation,grub,2.02,https://www.gnu.org/software/grub/
+grub.rhel7,2,Red Hat Enterprise Linux 8,grub2,random,mail:secalert@redhat.com
+
+Step 7:
+
+./grub-mkimage -O x86_64-efi -o grubx64.efi -p /EFI/redhat -d grub-core all_video boot btrfs cat chain configfile echo efifwsetup efinet ext2 fat font gfxmenu gfxterm gzio halt hfsplus iso9660 jpeg loadenv loopback lvm mdraid09 mdraid1x minicmd normal part_apple part_msdos part_gpt password_pbkdf2 png reboot regexp search search_fs_uuid search_fs_file search_label serial sleep syslinuxcfg test tftp video xfs backtrace http linux usb usbserial_common usbserial_pl2303 usbserial_ftdi usbserial_usbdebug keylayouts at_keyboard multiboot2 --sbat ./sbat.csv
+
+The result will be a grubx64.efi executable.
