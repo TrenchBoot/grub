@@ -1,0 +1,18 @@
+name: Test build and package QubesOS RPMs
+
+on:
+  push:
+    branches:
+      - 'intel-txt-aem*'
+      - 'aem-qubes*'
+    tags:
+      - '*'
+
+jobs:
+  qubes-dom0-package:
+    uses: TrenchBoot/.github/.github/workflows/qubes-dom0-package.yml@master
+    with:
+      base-commit: '7fcd797eb6d7d45df73818dbead9e388cf3563db'
+      patch-start: 1100
+      qubes-component: 'grub2'
+      spec-pattern: '/^Patch1001:/'
