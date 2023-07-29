@@ -1,0 +1,18 @@
+name: Test build and package QubesOS RPMs
+
+on:
+  push:
+    branches:
+      - 'intel-txt-aem*'
+  pull_request_target:
+    branches: # this is to avoid running the workflow twice in a PR
+      - 'intel-txt-aem*'
+
+jobs:
+  qubes-dom0-package:
+    uses: TrenchBoot/.github/.github/workflows/qubes-dom0-package.yml@master
+    with:
+      base-commit: 'ae94b97be2b81b625d6af6654d3ed79078b50ff6'
+      patch-start: 1100
+      qubes-component: 'grub2'
+      spec-pattern: '/^Patch1001:/'
