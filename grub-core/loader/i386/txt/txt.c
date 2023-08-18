@@ -640,8 +640,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 
   grub_dprintf ("slaunch", "SINIT capabilities %08x\n", sinit_caps);
 
-  os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE |
-				GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
+  os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
 
   if (grub_get_tpm_ver () == GRUB_TPM_20)
     {
