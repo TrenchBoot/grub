@@ -408,8 +408,6 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
 			     N_("exceeded number of var MTRRs when mapping range"));
     }
 
-  ndx = 0;
-
   while ( num_pages > 0 )
     {
       /* Set the base of the current MTRR */
