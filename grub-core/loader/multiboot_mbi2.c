@@ -39,6 +39,7 @@
 #include <grub/i386/memory.h>
 #include <grub/i386/slaunch.h>
 #include <grub/i386/txt.h>
+#include <grub/slr_table.h>
 
 #if defined (GRUB_MACHINE_EFI)
 #include <grub/efi/efi.h>
@@ -1166,4 +1167,63 @@ grub_multiboot2_set_bootdev (void)
     grub_device_close (dev);
 
   bootdev_set = 1;
+}
+
+static void
+add_multiboot2_slrt_policy_entries (void)
+{
+  unsigned i;
+  struct module *cur;
+
+  for (i = 0, cur = modules; i < modcnt; i++, cur = cur->next)
+    {
+      grub_slaunch_add_slrt_policy_entry (17,
+                                          GRUB_SLR_ET_MULTIBOOT_MODULE,
+                                          /*flags=*/0,
+                                          cur->start,
+                                          cur->size,
+                                          "Measured MB2 module");
+    }
+}
+
+grub_err_t
+grub_multiboot2_prepare_slaunch_txt (grub_uint32_t mbi_target,
+                                     grub_uint32_t mbi_size)
+{
+  grub_err_t err;
+  struct grub_slaunch_params *slparams = grub_slaunch_params ();
+
+  slparams->slr_table_base = GRUB_SLAUNCH_STORE_IN_OS2MLE;
+  slparams->slr_table_size = GRUB_PAGE_SIZE;
+
+  slparams->slr_table_mem = grub_zalloc (slparams->slr_table_size);
+  if (slparams->slr_table_mem == NULL)
+    return GRUB_ERR_OUT_OF_MEMORY;
+
+  err = grub_txt_boot_prepare (slparams);
+  if (err != GRUB_ERR_NONE)
+    {
+      grub_printf ("TXT boot preparation failed");
+      return err;
+    }
+
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_MULTIBOOT_INFO,
+                                      /*flags=*/0,
+                                      mbi_target,
+                                      mbi_size,
+                                      "Measured MB2 information");
+  grub_slaunch_add_slrt_policy_entries ();
+  grub_txt_add_slrt_policy_entries ();
+  add_multiboot2_slrt_policy_entries ();
+  grub_slaunch_finish_slr_table ();
+
+  grub_dprintf ("multiboot_loader", "slr_table_base = %lx, slr_table_size = %x\n",
+                (unsigned long) slparams->slr_table_base,
+                (unsigned) slparams->slr_table_size);
+  grub_memcpy ((void *)(grub_addr_t) slparams->slr_table_base,
+               slparams->slr_table_mem,
+               slparams->slr_table_size);
+
+  return GRUB_ERR_NONE;
 }

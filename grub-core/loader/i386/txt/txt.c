@@ -586,6 +586,20 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   size = (grub_uint64_t *) ((grub_addr_t) os_mle_data - sizeof (grub_uint64_t));
   *size = sizeof (*os_mle_data) + sizeof (grub_uint64_t);
 
+  if (slparams->slr_table_base == GRUB_SLAUNCH_STORE_IN_OS2MLE)
+    {
+      /* SLRT needs to be at least 4-byte aligned per specification. */
+      slparams->slr_table_base =
+          ALIGN_UP ((grub_addr_t) os_mle_data + sizeof (*os_mle_data), 4);
+
+      /* Recompute size including SLRT table in it. */
+      *size = (slparams->slr_table_base + slparams->slr_table_size)
+            - ((grub_addr_t) os_mle_data - sizeof (grub_uint64_t));
+
+      /* Size of heap sections should be a multiple of 8. */
+      *size = ALIGN_UP (*size, 8);
+    }
+
   grub_memset (os_mle_data, 0, sizeof (*os_mle_data));
 
   os_mle_data->version = GRUB_SL_OS_MLE_STRUCT_VERSION;

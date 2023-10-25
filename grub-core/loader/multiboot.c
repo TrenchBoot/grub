@@ -165,22 +165,11 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
-  grub_err_t err;
   struct grub_slaunch_params *slparams = grub_slaunch_params();
   state.edi = grub_slaunch_platform_type ();
 
   if (state.edi == SLP_INTEL_TXT)
     {
-      err = grub_txt_boot_prepare (slparams);
-
-      if (err != GRUB_ERR_NONE)
-	{
-	  grub_printf ("TXT boot preparation failed");
-	  return;
-	}
-
-      grub_slaunch_finish_slr_table ();
-
       /* Configure relocator GETSEC[SENTER] call. */
       state.eax = GRUB_SMX_LEAF_SENTER;
       state.ebx = slparams->dce_base;
@@ -215,6 +204,16 @@ grub_multiboot_boot (void)
 
   if (err)
     return err;
+
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      err = grub_multiboot2_prepare_slaunch_txt (state.MULTIBOOT_MBI_REGISTER,
+                                                 mbi_size);
+      if (err)
+        return err;
+    }
+#endif
 
   if (grub_efi_is_finished)
     normal_boot (GRUB_MULTIBOOT (relocator), state);
