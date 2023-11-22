@@ -735,7 +735,7 @@ retrieve_video_parameters (grub_properly_aligned_t **ptrorig)
 }
 
 grub_err_t
-grub_multiboot2_make_mbi (grub_uint32_t *target)
+grub_multiboot2_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
 {
   grub_properly_aligned_t *ptrorig;
   grub_properly_aligned_t *mbistart;
@@ -1041,7 +1041,9 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
       / sizeof (grub_properly_aligned_t);
   }
 
-  ((grub_uint32_t *) mbistart)[0] = (char *) ptrorig - (char *) mbistart;
+  *size = (char *) ptrorig - (char *) mbistart;
+
+  ((grub_uint32_t *) mbistart)[0] = *size;
   ((grub_uint32_t *) mbistart)[1] = 0;
 
   return GRUB_ERR_NONE;
