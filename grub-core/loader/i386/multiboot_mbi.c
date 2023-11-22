@@ -453,7 +453,7 @@ retrieve_video_parameters (struct multiboot_info *mbi,
 }
 
 grub_err_t
-grub_multiboot_make_mbi (grub_uint32_t *target)
+grub_multiboot_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
 {
   struct multiboot_info *mbi;
   struct multiboot_mod_list *modlist;
@@ -620,6 +620,8 @@ grub_multiboot_make_mbi (grub_uint32_t *target)
   if (err)
     return err;
 #endif
+
+  *size = (char *) ptrorig - (char *) mbi;
 
   return GRUB_ERR_NONE;
 }
