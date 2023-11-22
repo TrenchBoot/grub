@@ -58,6 +58,7 @@ extern void *grub_slaunch_module (void);
 extern struct grub_slaunch_params *grub_slaunch_params (void);
 
 extern void grub_slaunch_init_slrt_storage (int arch);
+extern void grub_slaunch_add_slrt_policy_entries (void);
 extern void grub_slaunch_add_slrt_policy_entry (grub_uint16_t pcr,
                                                 grub_uint16_t entity_type,
                                                 grub_uint16_t flags,

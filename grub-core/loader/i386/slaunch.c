@@ -93,7 +93,10 @@ grub_slaunch_init_slrt_storage (int arch)
   slr_policy_staging->hdr.size = sizeof(struct grub_slr_entry_policy);
   slr_policy_staging->revision = GRUB_SLR_TABLE_REVISION;
   slr_policy_staging->nr_entries = 0;
+}
 
+void grub_slaunch_add_slrt_policy_entries (void)
+{
   /* The SLR table should be measured too, at least parts of it. */
   grub_slaunch_add_slrt_policy_entry (18,
                                       GRUB_SLR_ET_SLRT,

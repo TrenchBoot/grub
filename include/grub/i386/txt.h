@@ -716,9 +716,11 @@ extern void grub_txt_shutdown (void);
 extern void grub_txt_state_show (void);
 /*
  * This function doesn't finish building of SLRT.  It's caller's responsibility
- * to call grub_slaunch_finish_slr_table() after possibly making some
- * grub_slr_add_entry() and grub_slaunch_add_slrt_policy_entry() calls.
+ * to call grub_slaunch_finish_slr_table() after making any necessary
+ * grub_slr_add_entry() and grub_slaunch_add_slrt_policy_entry() calls including
+ * grub_txt_add_slrt_polic_entries() and grub_slaunch_add_slrt_policy_entries().
  */
 extern grub_err_t grub_txt_boot_prepare (struct grub_slaunch_params *slparams);
+extern void grub_txt_add_slrt_policy_entries (void);
 
 #endif

@@ -810,6 +810,8 @@ grub_linux_boot (void)
       if (err != GRUB_ERR_NONE)
 	return err;
 
+      grub_slaunch_add_slrt_policy_entries ();
+      grub_txt_add_slrt_policy_entries ();
       grub_linux_setup_slr_table (slparams);
       grub_slaunch_finish_slr_table ();
 

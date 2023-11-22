@@ -993,12 +993,6 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   txt_heap = grub_txt_get_heap ();
   os_mle_data = grub_txt_os_mle_data_start (txt_heap);
   setup_txt_slrt_entry (slparams, os_mle_data);
-  grub_slaunch_add_slrt_policy_entry (18,
-                                      GRUB_SLR_ET_TXT_OS2MLE,
-                                      /*flags=*/0,
-                                      (grub_addr_t) os_mle_data,
-                                      sizeof(*os_mle_data),
-                                      "Measured TXT OS-MLE data");
 
   grub_tpm_relinquish_locality (0);
   grub_dprintf ("slaunch", "Relinquished TPM locality 0\n");
@@ -1019,4 +1013,21 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch must run on BSP"));
 
   return GRUB_ERR_NONE;
+}
+
+void
+grub_txt_add_slrt_policy_entries (void)
+{
+  struct grub_txt_os_mle_data *os_mle_data;
+  grub_uint8_t *txt_heap;
+
+  txt_heap = grub_txt_get_heap ();
+  os_mle_data = grub_txt_os_mle_data_start (txt_heap);
+
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_TXT_OS2MLE,
+                                      /*flags=*/0,
+                                      (grub_addr_t) os_mle_data,
+                                      sizeof(*os_mle_data),
+                                      "Measured TXT OS-MLE data");
 }
