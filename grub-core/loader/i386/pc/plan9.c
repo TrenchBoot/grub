@@ -34,6 +34,7 @@
 #include <grub/cpu/relocator.h>
 #include <grub/extcmd.h>
 #include <grub/verify.h>
+#include <grub/i386/slaunch.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -84,7 +85,7 @@ grub_plan9_boot (void)
     .ebx = 0,
     .ecx = 0,
     .edx = 0,
-    .edi = 0,
+    .edi = SLP_NONE,
     .esp = 0,
     .ebp = 0,
     .esi = 0

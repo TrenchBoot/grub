@@ -30,10 +30,10 @@
 
 /* Does this compiler support compile-time error attributes? */
 #if GNUC_PREREQ(4,3)
-#  define ATTRIBUTE_ERROR(msg) \
+#  define GRUB_ATTRIBUTE_ERROR(msg) \
 	__attribute__ ((__error__ (msg)))
 #else
-#  define ATTRIBUTE_ERROR(msg) __attribute__ ((noreturn))
+#  define GRUB_ATTRIBUTE_ERROR(msg) __attribute__ ((noreturn))
 #endif
 
 #if GNUC_PREREQ(4,4)
@@ -55,5 +55,7 @@
 #else
 #  define CLANG_PREREQ(maj,min) 0
 #endif
+
+#define UNUSED __attribute__((__unused__))
 
 #endif /* ! GRUB_COMPILER_HEADER */

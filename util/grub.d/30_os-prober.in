@@ -27,7 +27,6 @@ export TEXTDOMAINDIR="@localedir@"
 . "$pkgdatadir/grub-mkconfig_lib"
 
 if [ "x${GRUB_DISABLE_OS_PROBER}" = "xtrue" ]; then
-  grub_warn "$(gettext_printf "os-prober will not be executed to detect other bootable partitions.\nSystems on them will not be added to the GRUB boot configuration.\nCheck GRUB_DISABLE_OS_PROBER documentation entry.")"
   exit 0
 fi
 
@@ -45,68 +44,26 @@ if [ -z "${OSPROBED}" ] ; then
 fi
 
 osx_entry() {
-    if [ x$2 = x32 ]; then
-        # TRANSLATORS: it refers to kernel architecture (32-bit)
-	bitstr="$(gettext "(32-bit)")"
-    else
-        # TRANSLATORS: it refers to kernel architecture (64-bit)
-	bitstr="$(gettext "(64-bit)")"
-    fi
+    found_other_os=1
     # TRANSLATORS: it refers on the OS residing on device %s
     onstr="$(gettext_printf "(on %s)" "${DEVICE}")"
-        cat << EOF
-menuentry '$(echo "${LONGNAME} $bitstr $onstr" | grub_quote)' --class osx --class darwin --class os \$menuentry_id_option 'osprober-xnu-$2-$(grub_get_device_id "${DEVICE}")'  {
+    hints=""
+    for hint in `"${grub_probe}" --device ${device} --target=efi_hints 2> /dev/null` ; do
+      hints="${hints} --hint=${hint}"
+    done
+    cat << EOF
+menuentry '$(echo "${LONGNAME} $onstr" | grub_quote)' --class osx --class darwin --class os \$menuentry_id_option 'osprober-xnu-$2-$(grub_get_device_id "${DEVICE}")'  {
 EOF
 	save_default_entry | grub_add_tab
 	prepare_grub_to_access_device ${DEVICE} | grub_add_tab
 	cat << EOF
+	set gfxpayload=keep
         load_video
-        set do_resume=0
-        if [ /var/vm/sleepimage -nt10 / ]; then
-           if xnu_resume /var/vm/sleepimage; then
-             set do_resume=1
-           fi
-        fi
-        if [ \$do_resume = 0 ]; then
-           xnu_uuid ${OSXUUID} uuid
-           if [ -f /Extra/DSDT.aml ]; then
-              acpi -e /Extra/DSDT.aml
-           fi
-           if [ /kernelcache -nt /System/Library/Extensions ]; then
-              $1 /kernelcache boot-uuid=\${uuid} rd=*uuid
-           elif [ -f /System/Library/Kernels/kernel ]; then
-              $1 /System/Library/Kernels/kernel boot-uuid=\${uuid} rd=*uuid
-              xnu_kextdir /System/Library/Extensions
-           else
-              $1 /mach_kernel boot-uuid=\${uuid} rd=*uuid
-              if [ /System/Library/Extensions.mkext -nt /System/Library/Extensions ]; then
-                xnu_mkext /System/Library/Extensions.mkext
-              else
-                xnu_kextdir /System/Library/Extensions
-              fi
-           fi
-           if [ -f /Extra/Extensions.mkext ]; then
-              xnu_mkext /Extra/Extensions.mkext
-           fi
-           if [ -d /Extra/Extensions ]; then
-              xnu_kextdir /Extra/Extensions
-           fi
-           if [ -f /Extra/devprop.bin ]; then
-              xnu_devprop_load /Extra/devprop.bin
-           fi
-           if [ -f /Extra/splash.jpg ]; then
-              insmod jpeg
-              xnu_splash /Extra/splash.jpg
-           fi
-           if [ -f /Extra/splash.png ]; then
-              insmod png
-              xnu_splash /Extra/splash.png
-           fi
-           if [ -f /Extra/splash.tga ]; then
-              insmod tga
-              xnu_splash /Extra/splash.tga
-           fi
-        fi
+	insmod part_gpt
+	insmod hfsplus
+	search --no-floppy --fs-uuid --set=root ${hints} $(grub_get_device_id "${DEVICE}")
+	chainloader (\$root)/System/Library/CoreServices/boot.efi
+	boot
 }
 EOF
 }
@@ -148,6 +105,7 @@ for OS in ${OSPROBED} ; do
 
   case ${BOOT} in
     chain)
+      found_other_os=1
 
 	  onstr="$(gettext_printf "(on %s)" "${DEVICE}")"
       cat << EOF
@@ -178,6 +136,7 @@ EOF
 EOF
     ;;
     efi)
+      found_other_os=1
 
 	EFIPATH=${DEVICE#*@}
 	DEVICE=${DEVICE%@*}
@@ -222,6 +181,7 @@ EOF
 	  LINITRD="${LINITRD#/boot}"
 	fi
 
+        found_other_os=1
 	onstr="$(gettext_printf "(on %s)" "${DEVICE}")"
 	recovery_params="$(echo "${LPARAMS}" | grep single)" || true
 	counter=1
@@ -295,13 +255,15 @@ EOF
       echo "$title_correction_code"
     ;;
     macosx)
-      if [ "${UUID}" ]; then
-	OSXUUID="${UUID}"
-	osx_entry xnu_kernel 32
-	osx_entry xnu_kernel64 64
-      fi
+      for subdevice in ${DEVICE%[[:digit:]]*}* ; do
+	parttype="`"${grub_probe}" --device ${device} --target=gpt_parttype "${subdevice}" 2> /dev/null`"
+	if [[ "$parttype" = "426f6f74-0000-11aa-aa11-00306543ecac" ]]; then
+	  DEVICE="${subdevice}" osx_entry
+	fi
+      done
     ;;
     hurd)
+      found_other_os=1
       onstr="$(gettext_printf "(on %s)" "${DEVICE}")"
       cat << EOF
 menuentry '$(echo "${LONGNAME} $onstr" | grub_quote)' --class hurd --class gnu --class os \$menuentry_id_option 'osprober-gnuhurd-/boot/gnumach.gz-false-$(grub_get_device_id "${DEVICE}")' {
@@ -328,6 +290,7 @@ EOF
 EOF
     ;;
     minix)
+      found_other_os=1
 	  cat << EOF
 menuentry "${LONGNAME} (on ${DEVICE}, Multiboot)" {
 EOF
@@ -344,3 +307,15 @@ EOF
     ;;
   esac
 done
+
+# We override the results of the menu_auto_hide code here, this is a bit ugly,
+# but grub-mkconfig writes out the file linearly, so this is the only way
+if [ "${found_other_os}" = "1" ]; then
+  cat << EOF
+# Other OS found, undo autohiding of menu unless menu_auto_hide=2
+if [ "\${orig_timeout_style}" -a "\${menu_auto_hide}" != "2" ]; then
+  set timeout_style=\${orig_timeout_style}
+  set timeout=\${orig_timeout}
+fi
+EOF
+fi

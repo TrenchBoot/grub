@@ -26,6 +26,7 @@
 #include <grub/command.h>
 #include <grub/dl.h>
 #include <grub/i18n.h>
+#include <grub/safemath.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -342,6 +343,84 @@ grub_mmap_unregister (int handle)
 }
 
 #endif /* ! GRUB_MMAP_REGISTER_BY_FIRMWARE */
+
+typedef struct
+{
+  grub_uint64_t addr;
+  grub_uint64_t limit;
+} addr_limit_t;
+
+/* Helper for grub_mmap_get_lowest().  */
+static int
+lowest_hook (grub_uint64_t addr, grub_uint64_t size, grub_memory_type_t type,
+	     void *data)
+{
+  addr_limit_t *al = data;
+  grub_uint64_t end;
+
+  if (type != GRUB_MEMORY_AVAILABLE)
+    return 0;
+
+  if (grub_add (addr, size, &end))
+    return 0;
+
+  if (addr >= al->limit)
+    al->addr = grub_min (al->addr, addr);
+
+  if ((addr < al->limit) && (end > al->limit))
+    al->addr = al->limit;
+
+  return 0;
+}
+
+/* This function calculates lowest available RAM address that is at or above
+   the passed limit. If no RAM exists above the limit, ~0 is returned. */
+grub_uint64_t
+grub_mmap_get_lowest (grub_uint64_t limit)
+{
+  addr_limit_t al = {~0, limit};
+
+  grub_mmap_iterate (lowest_hook, &al);
+
+  return al.addr;
+}
+
+/* Helper for grub_mmap_get_highest().  */
+static int
+highest_hook (grub_uint64_t addr, grub_uint64_t size, grub_memory_type_t type,
+	      void *data)
+{
+  addr_limit_t *al = data;
+  grub_uint64_t end;
+
+  if (type != GRUB_MEMORY_AVAILABLE)
+    return 0;
+
+  if (grub_add (addr, size, &end))
+    return 0;
+
+  if (end < al->limit)
+    al->addr = grub_max (al->addr, end);
+
+  if ((addr < al->limit) && (end >= al->limit))
+    al->addr = al->limit;
+
+  return 0;
+}
+
+/* This function calculates highest available RAM address that is below the
+   passed limit. Returned address is either one byte after last byte of RAM or
+   equal to limit, whichever is lower. If no RAM exists below limit, 0 is
+   returned. */
+grub_uint64_t
+grub_mmap_get_highest (grub_uint64_t limit)
+{
+  addr_limit_t al = {0, limit};
+
+  grub_mmap_iterate (highest_hook, &al);
+
+  return al.addr;
+}
 
 #define CHUNK_SIZE	0x400
 

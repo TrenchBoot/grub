@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if ! [[ $KERNEL_INSTALL_MACHINE_ID ]]; then
+    exit 0
+fi
+
+ARCH=$(uname -m)
+
+# Is only needed for ppc64* since we can't assume a BLS capable bootloader there
+if [[ $ARCH != "ppc64" && $ARCH != "ppc64le" ]]; then
+    exit 0
+fi
+
+[[ -f /etc/default/grub ]] && . /etc/default/grub
+
+COMMAND="$1"
+
+case "$COMMAND" in
+    add|remove)
+        grub2-mkconfig --no-grubenv-update -o /boot/grub2/grub.cfg >& /dev/null
+        ;;
+    *)
+        ;;
+esac
