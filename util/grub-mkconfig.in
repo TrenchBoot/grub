@@ -45,6 +45,7 @@ grub_probe="${sbindir}/@grub_probe@"
 grub_file="${bindir}/@grub_file@"
 grub_editenv="${bindir}/@grub_editenv@"
 grub_script_check="${bindir}/@grub_script_check@"
+grub_get_kernel_settings="${sbindir}/@grub_get_kernel_settings@"
 
 export TEXTDOMAIN=@PACKAGE@
 export TEXTDOMAINDIR="@localedir@"
@@ -161,6 +162,8 @@ if test -f ${sysconfdir}/default/grub ; then
   . ${sysconfdir}/default/grub
 fi
 
+eval "$("${grub_get_kernel_settings}")" || true
+
 if [ "x${GRUB_DISABLE_UUID}" = "xtrue" ]; then
   if [ -z "${GRUB_DISABLE_LINUX_UUID}" ]; then
     GRUB_DISABLE_LINUX_UUID="true"
@@ -251,7 +254,8 @@ export GRUB_DEFAULT \
   GRUB_ENABLE_CRYPTODISK \
   GRUB_BADRAM \
   GRUB_OS_PROBER_SKIP_LIST \
-  GRUB_DISABLE_SUBMENU
+  GRUB_DISABLE_SUBMENU \
+  SUSE_BTRFS_SNAPSHOT_BOOTING
 
 if test "x${grub_cfg}" != "x"; then
   rm -f "${grub_cfg}.new"
@@ -278,6 +282,8 @@ for i in "${grub_mkconfig_dir}"/* ; do
     *~) ;;
     # emacsen autosave files. FIXME: support other editors
     */\#*\#) ;;
+    # rpm config files of yore.
+    *.rpmsave|*.rpmnew|*.rpmorig) ;;
     *)
       if grub_file_is_not_garbage "$i" && test -x "$i" ; then
         echo

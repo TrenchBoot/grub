@@ -1,0 +1,10 @@
+host:
+  rpm:
+    build:
+    - grub2.spec
+source:
+  files:
+  - url: https://ftp.gnu.org/gnu/grub/grub-2.06.tar.xz
+    signature: https://ftp.gnu.org/gnu/grub/grub-2.06.tar.xz.sig
+    pubkeys:
+    - grub2-key.asc

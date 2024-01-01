@@ -29,9 +29,9 @@ export TEXTDOMAINDIR="@localedir@"
 CLASS="--class gnu-linux --class gnu --class os --class xen"
 
 if [ "x${GRUB_DISTRIBUTOR}" = "x" ] ; then
-  OS=GNU/Linux
+  OS="$(sed 's, release .*$,,g' /etc/system-release)"
 else
-  OS="${GRUB_DISTRIBUTOR} GNU/Linux"
+  OS="${GRUB_DISTRIBUTOR}"
   CLASS="--class $(echo ${GRUB_DISTRIBUTOR} | tr 'A-Z' 'a-z' | cut -d' ' -f1|LC_ALL=C sed 's,[^[:alnum:]_],_,g') ${CLASS}"
 fi
 
@@ -73,10 +73,14 @@ fi
 
 case x"$GRUB_FS" in
     xbtrfs)
+	if [ "x${SUSE_BTRFS_SNAPSHOT_BOOTING}" = "xtrue" ]; then
+	GRUB_CMDLINE_LINUX="${GRUB_CMDLINE_LINUX} \${extra_cmdline}"
+	else
 	rootsubvol="`make_system_path_relative_to_its_root /`"
 	rootsubvol="${rootsubvol#/}"
 	if [ "x${rootsubvol}" != x ]; then
 	    GRUB_CMDLINE_LINUX="rootflags=subvol=${rootsubvol} ${GRUB_CMDLINE_LINUX}"
+	fi
 	fi;;
     xzfs)
 	rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
@@ -103,6 +107,7 @@ linux_entry_xsm ()
   xsm="$7"
   # If user wants to enable XSM support, make sure there's
   # corresponding policy file.
+  xenpolicy=
   if ${xsm} ; then
       xenpolicy="xenpolicy-$xen_version"
       if test ! -e "${xen_dirname}/${xenpolicy}" ; then
@@ -149,6 +154,7 @@ linux_entry_xsm ()
         else
             xen_rm_opts="no-real-mode edd=off"
         fi
+	insmod ${xen_module}
 	${xen_loader}	${rel_xen_dirname}/${xen_basename} placeholder ${xen_args} \${xen_rm_opts}
 	echo	'$(echo "$lmessage" | grub_quote)'
 	${module_loader}	${rel_dirname}/${basename} placeholder root=${linux_root_device_thisversion} ro ${args}
@@ -162,6 +168,7 @@ EOF
     done
     sed "s/^/$submenu_indentation/" << EOF
 	echo	'$(echo "$message" | grub_quote)'
+	insmod ${xen_module}
 	${module_loader}	--nounzip   $(echo $initrd_path)
 EOF
   fi
@@ -249,13 +256,16 @@ while [ "x${xen_list}" != "x" ] ; do
 	echo "	submenu '$(gettext_printf "Xen hypervisor, version %s" "${xen_version}" | grub_quote)' \$menuentry_id_option 'xen-hypervisor-$xen_version-$boot_device_id' {"
     fi
     if ($grub_file --is-arm64-efi $current_xen); then
+	xen_module="xen_boot"
 	xen_loader="xen_hypervisor"
 	module_loader="xen_module"
     else
 	if ($grub_file --is-x86-multiboot2 $current_xen); then
+	    xen_module="multiboot2"
 	    xen_loader="multiboot2"
 	    module_loader="module2"
 	else
+	    xen_module="multiboot"
 	    xen_loader="multiboot"
 	    module_loader="module"
         fi

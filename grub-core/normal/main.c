@@ -206,10 +206,11 @@ grub_normal_init_page (struct grub_term_output *term,
   char *msg_formatted;
   grub_uint32_t *unicode_msg;
   grub_uint32_t *last_position;
- 
-  grub_term_cls (term);
 
-  msg_formatted = grub_xasprintf (_("GNU GRUB  version %s"), PACKAGE_VERSION);
+  if (! grub_debug_is_enabled ())
+    grub_term_cls (term);
+
+  msg_formatted = grub_xasprintf (_("GRUB version %s"), PACKAGE_VERSION);
   if (!msg_formatted)
     return;
  
@@ -320,7 +321,30 @@ grub_cmd_normal (struct grub_command *cmd __attribute__ ((unused)),
       /* Guess the config filename. It is necessary to make CONFIG static,
 	 so that it won't get broken by longjmp.  */
       char *config;
-      const char *prefix;
+      const char *prefix, *fw_path;
+
+      fw_path = grub_env_get ("fw_path");
+      if (fw_path)
+	{
+	  config = grub_xasprintf ("%s/grub.cfg", fw_path);
+	  if (config)
+	    {
+	      grub_file_t file;
+
+	      file = grub_file_open (config, GRUB_FILE_TYPE_CONFIG);
+	      if (file)
+		{
+		  grub_file_close (file);
+		  grub_enter_normal_mode (config);
+		}
+              else
+                {
+                  /*  Ignore all errors.  */
+                  grub_errno = 0;
+                }
+	      grub_free (config);
+	    }
+	}
 
       prefix = grub_env_get ("prefix");
       if (prefix)

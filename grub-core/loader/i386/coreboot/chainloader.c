@@ -33,6 +33,7 @@
 #include <grub/lib/LzmaDec.h>
 #include <grub/efi/pe32.h>
 #include <grub/i386/cpuid.h>
+#include <grub/i386/slaunch.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -47,6 +48,7 @@ grub_chain_boot (void)
   grub_video_set_mode ("text", 0, 0);
 
   state.eip = entry;
+  state.edi = SLP_NONE;
   return grub_relocator32_boot (relocator, state, 0);
 }
 
