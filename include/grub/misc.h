@@ -35,6 +35,14 @@
 #define ARRAY_SIZE(array) (sizeof (array) / sizeof (array[0]))
 #define COMPILE_TIME_ASSERT(cond) switch (0) { case 1: case !(cond): ; }
 
+#ifndef CONCAT_
+#define CONCAT_(a, b) a ## b
+#endif
+
+#ifndef CONCAT
+#define CONCAT(a, b) CONCAT_(a, b)
+#endif
+
 #define grub_dprintf(condition, ...) grub_real_dprintf(GRUB_FILE, __LINE__, condition, __VA_ARGS__)
 
 void *EXPORT_FUNC(grub_memmove) (void *dest, const void *src, grub_size_t n);
@@ -62,6 +70,45 @@ grub_stpcpy (char *dest, const char *src)
   while (*s++ != '\0');
 
   return d - 1;
+}
+
+static inline grub_size_t
+grub_strlcpy (char *dest, const char *src, grub_size_t size)
+{
+  char *d = dest;
+  grub_size_t res = 0;
+  /*
+   * We do not subtract one from size here to avoid dealing with underflowing
+   * the value, which is why to_copy is always checked to be greater than one
+   * throughout this function.
+   */
+  grub_size_t to_copy = size;
+
+  /* Copy size - 1 bytes to dest. */
+  if (to_copy > 1)
+    while ((*d++ = *src++) != '\0' && ++res && --to_copy > 1)
+      ;
+
+  /*
+   * NUL terminate if size != 0. The previous step may have copied a NUL byte
+   * if it reached the end of the string, but we know dest[size - 1] must always
+   * be a NUL byte.
+   */
+  if (size != 0)
+    dest[size - 1] = '\0';
+
+  /* If there is still space in dest, but are here, we reached the end of src. */
+  if (to_copy > 1)
+    return res;
+
+  /*
+   * If we haven't reached the end of the string, iterate through to determine
+   * the strings total length.
+   */
+  while (*src++ != '\0' && ++res)
+   ;
+
+  return res;
 }
 
 /* XXX: If grub_memmove is too slow, we must implement grub_memcpy.  */
@@ -335,6 +382,7 @@ char *EXPORT_FUNC(grub_strdup) (const char *s) WARN_UNUSED_RESULT;
 char *EXPORT_FUNC(grub_strndup) (const char *s, grub_size_t n) WARN_UNUSED_RESULT;
 void *EXPORT_FUNC(grub_memset) (void *s, int c, grub_size_t n);
 grub_size_t EXPORT_FUNC(grub_strlen) (const char *s) WARN_UNUSED_RESULT;
+void EXPORT_FUNC(grub_str_sep) (const char *s, char *p, char delim, char *r);
 
 /* Replace all `ch' characters of `input' with `with' and copy the
    result into `output'; return EOS address of `output'. */
@@ -369,6 +417,7 @@ grub_puts (const char *s)
 }
 
 int EXPORT_FUNC(grub_puts_) (const char *s);
+int EXPORT_FUNC(grub_debug_is_enabled) (void);
 int EXPORT_FUNC(grub_debug_enabled) (const char *condition);
 void EXPORT_FUNC(grub_real_dprintf) (const char *file,
                                      const int line,
@@ -524,8 +573,21 @@ void EXPORT_FUNC(grub_real_boot_time) (const char *file,
 #define grub_boot_time(...)
 #endif
 
-#define grub_max(a, b) (((a) > (b)) ? (a) : (b))
-#define grub_min(a, b) (((a) < (b)) ? (a) : (b))
+#define _grub_min(a, b, _a, _b)						      \
+  ({ typeof (a) _a = (a);						      \
+     typeof (b) _b = (b);						      \
+     _a < _b ? _a : _b; })
+#define grub_min(a, b) _grub_min(a, b,					      \
+				 CONCAT(_a_,__COUNTER__),		      \
+				 CONCAT(_b_,__COUNTER__))
+
+#define _grub_max(a, b, _a, _b)						      \
+  ({ typeof (a) _a = (a);						      \
+     typeof (b) _b = (b);						      \
+     _a > _b ? _a : _b; })
+#define grub_max(a, b) _grub_max(a, b,					      \
+				 CONCAT(_a_,__COUNTER__),		      \
+				 CONCAT(_b_,__COUNTER__))
 
 #define grub_log2ull(n) (GRUB_TYPE_BITS (grub_uint64_t) - __builtin_clzll (n) - 1)
 

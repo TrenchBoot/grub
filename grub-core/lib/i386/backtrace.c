@@ -15,11 +15,23 @@
  *  You should have received a copy of the GNU General Public License
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <config.h>
+#ifdef GRUB_UTIL
+#define REALLY_GRUB_UTIL GRUB_UTIL
+#undef GRUB_UTIL
+#endif
+
+#include <grub/symbol.h>
+#include <grub/dl.h>
+
+#ifdef REALLY_GRUB_UTIL
+#define GRUB_UTIL REALLY_GRUB_UTIL
+#undef REALLY_GRUB_UTIL
+#endif
 
 #include <grub/misc.h>
 #include <grub/command.h>
 #include <grub/err.h>
-#include <grub/dl.h>
 #include <grub/mm.h>
 #include <grub/term.h>
 #include <grub/backtrace.h>

@@ -843,6 +843,8 @@ try_open (const char *path)
 }
 #endif
 
+extern int use_relative_path_on_btrfs;
+
 int
 main (int argc, char *argv[])
 {
@@ -875,6 +877,9 @@ main (int argc, char *argv[])
     grub_env_set ("debug", "all");
 
   grub_util_load_config (&config);
+
+  if (config.is_suse_btrfs_snapshot_enabled)
+    use_relative_path_on_btrfs = 1;
 
   if (!bootloader_id && config.grub_distributor)
     {
@@ -1026,27 +1031,22 @@ main (int argc, char *argv[])
 
   switch (platform)
     {
-    case GRUB_INSTALL_PLATFORM_I386_EFI:
-    case GRUB_INSTALL_PLATFORM_X86_64_EFI:
     case GRUB_INSTALL_PLATFORM_ARM_EFI:
     case GRUB_INSTALL_PLATFORM_ARM64_EFI:
+    case GRUB_INSTALL_PLATFORM_I386_EFI:
+    case GRUB_INSTALL_PLATFORM_IA64_EFI:
     case GRUB_INSTALL_PLATFORM_LOONGARCH64_EFI:
     case GRUB_INSTALL_PLATFORM_RISCV32_EFI:
     case GRUB_INSTALL_PLATFORM_RISCV64_EFI:
-    case GRUB_INSTALL_PLATFORM_IA64_EFI:
+    case GRUB_INSTALL_PLATFORM_X86_64_EFI:
       is_efi = 1;
+      if (!force)
+        grub_util_error (_("This utility should not be used for EFI platforms"
+                          " because it does not support UEFI Secure Boot."
+                          " If you really wish to proceed, invoke the --force"
+                          " option.\nMake sure Secure Boot is disabled before"
+                          " proceeding"));
       break;
-    default:
-      is_efi = 0;
-      break;
-
-      /* pacify warning.  */
-    case GRUB_INSTALL_PLATFORM_MAX:
-      break;
-    }
-
-  switch (platform)
-    {
     case GRUB_INSTALL_PLATFORM_I386_IEEE1275:
     case GRUB_INSTALL_PLATFORM_POWERPC_IEEE1275:
 #ifdef __linux__
@@ -1055,12 +1055,14 @@ main (int argc, char *argv[])
         try_open ("/dev/nvram");
 #endif
       break;
+      /* pacify warning.  */
+    case GRUB_INSTALL_PLATFORM_MAX:
+      break;
     default:
       break;
     }
 
   /* Find the EFI System Partition.  */
-
   if (is_efi)
     {
       grub_fs_t fs;
@@ -1366,6 +1368,15 @@ main (int argc, char *argv[])
       relative_grubdir = xstrdup ("/");
     }
 
+  if (config.is_suse_btrfs_snapshot_enabled
+      && grub_strncmp(grub_fs->name, "btrfs", sizeof ("btrfs") - 1) == 0)
+    {
+      if (!load_cfg_f)
+        load_cfg_f = grub_util_fopen (load_cfg, "wb");
+      have_load_cfg = 1;
+      fprintf (load_cfg_f, "set btrfs_relative_path='y'\n");
+    }
+
   char *prefix_drive = NULL;
   char *install_drive = NULL;
 
@@ -1600,6 +1611,55 @@ main (int argc, char *argv[])
 	}
       prefix_drive = xasprintf ("(%s)", grub_drives[0]);
     }
+
+#ifdef __linux__
+
+  if (config.is_suse_btrfs_snapshot_enabled
+      && grub_strncmp(grub_fs->name, "btrfs", sizeof ("btrfs") - 1) == 0)
+    {
+      char *subvol = NULL;
+      char *mount_path = NULL;
+      char **rootdir_devices = NULL;
+      char *rootdir_path = grub_util_path_concat (2, "/", rootdir);
+
+      if (grub_util_is_directory (rootdir_path))
+	rootdir_devices = grub_guess_root_devices (rootdir_path);
+
+      free (rootdir_path);
+
+      if (rootdir_devices && rootdir_devices[0])
+	if (grub_strcmp (rootdir_devices[0], grub_devices[0]) == 0)
+	  subvol = grub_util_get_btrfs_subvol (platdir, &mount_path);
+
+      if (subvol && mount_path)
+	{
+	  char *def_subvol;
+
+	  def_subvol = grub_util_get_btrfs_subvol ("/", NULL);
+
+	  if (def_subvol)
+	    {
+	      if (!load_cfg_f)
+		load_cfg_f = grub_util_fopen (load_cfg, "wb");
+	      have_load_cfg = 1;
+
+	      if (grub_strcmp (subvol, def_subvol) != 0)
+		fprintf (load_cfg_f, "btrfs-mount-subvol ($root) %s %s\n", mount_path, subvol);
+	      free (def_subvol);
+	    }
+	}
+
+      for (curdev = rootdir_devices; *curdev; curdev++)
+	free (*curdev);
+      if (rootdir_devices)
+	free (rootdir_devices);
+      if (subvol)
+	free (subvol);
+      if (mount_path)
+	free (mount_path);
+    }
+
+#endif
 
   char mkimage_target[200];
   const char *core_name = NULL;

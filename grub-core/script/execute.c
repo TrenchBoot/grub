@@ -33,10 +33,18 @@
    is sizeof (int) * 3, and one extra for a possible -ve sign.  */
 #define ERRNO_DIGITS_MAX  (sizeof (int) * 3 + 1)
 
+/*
+ * A limit on recursion, to avoid colliding with the heap. UEFI defines a baseline
+ * stack size of 128 KiB. So, assuming at most 1-2 KiB per iteration this should
+ * keep us safe.
+ */
+#define MAX_RECURSION_DEPTH 64
+
 static unsigned long is_continue;
 static unsigned long active_loops;
 static unsigned long active_breaks;
 static unsigned long function_return;
+static unsigned long recursion_depth;
 
 #define GRUB_SCRIPT_SCOPE_MALLOCED      1
 #define GRUB_SCRIPT_SCOPE_ARGS_MALLOCED 2
@@ -752,6 +760,9 @@ cleanup:
 	}
     }
 
+  if (result.args == NULL || result.argc == 0)
+    goto fail;
+
   if (! result.args[result.argc - 1])
     result.argc--;
 
@@ -816,7 +827,13 @@ grub_script_execute_cmd (struct grub_script_cmd *cmd)
   if (cmd == 0)
     return 0;
 
+  recursion_depth++;
+
+  if (recursion_depth >= MAX_RECURSION_DEPTH)
+    return grub_error (GRUB_ERR_RECURSION_DEPTH, N_("maximum recursion depth exceeded"));
+
   ret = cmd->exec (cmd);
+  recursion_depth--;
 
   grub_snprintf (errnobuf, sizeof (errnobuf), "%d", ret);
   grub_env_set ("?", errnobuf);
@@ -897,7 +914,10 @@ grub_script_execute_sourcecode (const char *source)
 	  break;
 	}
 
-      ret = grub_script_execute (parsed_script);
+      /* Don't let trailing blank lines determine the return code.  */
+      if (parsed_script->cmd)
+	ret = grub_script_execute (parsed_script);
+
       grub_script_free (parsed_script);
       grub_free (line);
     }

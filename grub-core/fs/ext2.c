@@ -495,6 +495,11 @@ grub_ext2_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
       struct grub_ext4_extent *ext;
       int i;
       grub_disk_addr_t ret;
+      grub_uint16_t nent;
+      /* maximum number of extent entries in the inode's inline extent area */
+      const grub_uint16_t max_inline_ext = sizeof (inode->blocks) / sizeof (*ext) - 1; /* Minus 1 extent header. */
+      /* maximum number of extent entries in the external extent block */
+      const grub_uint16_t max_external_ext = EXT2_BLOCK_SIZE(data) / sizeof (*ext) - 1; /* Minus 1 extent header. */
 
       if (grub_ext4_find_leaf (data, (struct grub_ext4_extent_header *) inode->blocks.dir_blocks,
 			       fileblock, &leaf) != GRUB_ERR_NONE)
@@ -508,7 +513,23 @@ grub_ext2_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
         return 0;
 
       ext = (struct grub_ext4_extent *) (leaf + 1);
-      for (i = 0; i < grub_le_to_cpu16 (leaf->entries); i++)
+
+      nent = grub_le_to_cpu16 (leaf->entries);
+
+      /*
+       * Determine the effective number of extent entries (nent) to process:
+       * If the extent header (leaf) is stored inline in the inode’s block
+       * area (i.e. at inode->blocks.dir_blocks), then only max_inline_ext
+       * entries can fit.
+       * Otherwise, if the header was read from an external extent block, use
+       * the larger limit, max_external_ext, based on the full block size.
+       */
+      if (leaf == (struct grub_ext4_extent_header *) inode->blocks.dir_blocks)
+	nent = grub_min (nent, max_inline_ext);
+      else
+	nent = grub_min (nent, max_external_ext);
+
+      for (i = 0; i < nent; i++)
         {
           if (fileblock < grub_le_to_cpu32 (ext[i].block))
             break;
@@ -1123,6 +1144,7 @@ static struct grub_fs grub_ext2_fs =
 
 GRUB_MOD_INIT(ext2)
 {
+  grub_ext2_fs.mod = mod;
   grub_fs_register (&grub_ext2_fs);
   my_mod = mod;
 }

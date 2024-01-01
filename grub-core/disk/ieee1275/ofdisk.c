@@ -24,6 +24,8 @@
 #include <grub/ieee1275/ofdisk.h>
 #include <grub/i18n.h>
 #include <grub/time.h>
+#include <grub/env.h>
+#include <grub/safemath.h>
 
 static char *last_devpath;
 static grub_ieee1275_ihandle_t last_ihandle;
@@ -44,7 +46,7 @@ struct ofdisk_hash_ent
 };
 
 static grub_err_t
-grub_ofdisk_get_block_size (const char *device, grub_uint32_t *block_size,
+grub_ofdisk_get_block_size (grub_uint32_t *block_size,
 			    struct ofdisk_hash_ent *op);
 
 #define OFDISK_HASH_SZ	8
@@ -80,6 +82,7 @@ ofdisk_hash_add_real (char *devpath)
   struct ofdisk_hash_ent **head = &ofdisk_hash[ofdisk_hash_fn(devpath)];
   const char *iptr;
   char *optr;
+  grub_size_t sz;
 
   p = grub_zalloc (sizeof (*p));
   if (!p)
@@ -87,8 +90,14 @@ ofdisk_hash_add_real (char *devpath)
 
   p->devpath = devpath;
 
-  p->grub_devpath = grub_malloc (sizeof ("ieee1275/")
-				 + 2 * grub_strlen (p->devpath));
+  if (grub_mul (grub_strlen (p->devpath), 2, &sz) ||
+      grub_add (sz, sizeof ("ieee1275/"), &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow detected while obtaining size of device path"));
+      return NULL;
+    }
+
+  p->grub_devpath = grub_malloc (sz);
 
   if (!p->grub_devpath)
     {
@@ -98,7 +107,13 @@ ofdisk_hash_add_real (char *devpath)
 
   if (! grub_ieee1275_test_flag (GRUB_IEEE1275_FLAG_NO_PARTITION_0))
     {
-      p->open_path = grub_malloc (grub_strlen (p->devpath) + 3);
+      if (grub_add (grub_strlen (p->devpath), 3, &sz))
+	{
+	  grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow detected while obtaining size of an open path"));
+	  return NULL;
+	}
+
+      p->open_path = grub_malloc (sz);
       if (!p->open_path)
 	{
 	  grub_free (p->grub_devpath);
@@ -224,8 +239,10 @@ dev_iterate (const struct grub_ieee1275_devalias *alias)
       args;
       char *buf, *bufptr;
       unsigned i;
+      grub_size_t sz;
 
-      if (grub_ieee1275_open (alias->path, &ihandle))
+      RETRY_IEEE1275_OFDISK_OPEN(alias->path, &ihandle)
+      if (! ihandle)
 	return;
 
       /* This method doesn't need memory allocation for the table. Open
@@ -243,9 +260,19 @@ dev_iterate (const struct grub_ieee1275_devalias *alias)
 	  return;
 	}
 
-      buf = grub_malloc (grub_strlen (alias->path) + 32);
+      if (grub_add (grub_strlen (alias->path), 32, &sz))
+	{
+	  grub_error (GRUB_ERR_OUT_OF_RANGE, "overflow detected while creating buffer for vscsi");
+	  grub_ieee1275_close (ihandle);
+	  return;
+	}
+
+      buf = grub_malloc (sz);
       if (!buf)
-	return;
+	{
+	  grub_ieee1275_close (ihandle);
+	  return;
+	}
       bufptr = grub_stpcpy (buf, alias->path);
 
       for (i = 0; i < args.nentries; i++)
@@ -287,9 +314,15 @@ dev_iterate (const struct grub_ieee1275_devalias *alias)
       grub_uint64_t *table;
       grub_uint16_t table_size;
       grub_ieee1275_ihandle_t ihandle;
+      grub_size_t sz;
 
-      buf = grub_malloc (grub_strlen (alias->path) +
-                         sizeof ("/disk@7766554433221100"));
+      if (grub_add (grub_strlen (alias->path), sizeof ("/disk@7766554433221100"), &sz))
+	{
+	  grub_error (GRUB_ERR_OUT_OF_RANGE, "overflow detected while creating buffer for sas_ioa");
+	  return;
+	}
+
+      buf = grub_malloc (sz);
       if (!buf)
         return;
       bufptr = grub_stpcpy (buf, alias->path);
@@ -305,7 +338,9 @@ dev_iterate (const struct grub_ieee1275_devalias *alias)
           return;
         }
 
-      if (grub_ieee1275_open (alias->path, &ihandle))
+      RETRY_IEEE1275_OFDISK_OPEN(alias->path, &ihandle);
+
+      if (! ihandle)
         {
           grub_free (buf);
           grub_free (table);
@@ -427,9 +462,17 @@ grub_ofdisk_iterate (grub_disk_dev_iterate_hook_t hook, void *hook_data,
 static char *
 compute_dev_path (const char *name)
 {
-  char *devpath = grub_malloc (grub_strlen (name) + 3);
+  char *devpath;
   char *p, c;
+  grub_size_t sz;
 
+  if (grub_add (grub_strlen (name), 3, &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow detected while obtaining size of device path"));
+      return NULL;
+    }
+
+  devpath = grub_malloc (sz);
   if (!devpath)
     return NULL;
 
@@ -461,6 +504,7 @@ grub_ofdisk_open (const char *name, grub_disk_t disk)
   grub_ssize_t actual;
   grub_uint32_t block_size = 0;
   grub_err_t err;
+  struct ofdisk_hash_ent *op;
 
   if (grub_strncmp (name, "ieee1275/", sizeof ("ieee1275/") - 1) != 0)
       return grub_error (GRUB_ERR_UNKNOWN_DEVICE,
@@ -470,6 +514,35 @@ grub_ofdisk_open (const char *name, grub_disk_t disk)
     return grub_errno;
 
   grub_dprintf ("disk", "Opening `%s'.\n", devpath);
+
+  op = ofdisk_hash_find (devpath);
+  if (!op)
+    op = ofdisk_hash_add (devpath, NULL);
+  if (!op)
+    {
+      grub_free (devpath);
+      return grub_errno;
+    }
+
+  /* Check if the call to open is the same to the last disk already opened */
+  if (last_devpath && !grub_strcmp(op->open_path,last_devpath))
+  {
+      goto finish;
+  }
+
+ /* If not, we need to close the previous disk and open the new one */
+  else {
+    if (last_ihandle){
+        grub_ieee1275_close (last_ihandle);
+    }
+    last_ihandle = 0;
+    last_devpath = NULL;
+
+    RETRY_IEEE1275_OFDISK_OPEN(op->open_path, &last_ihandle);
+    if (! last_ihandle)
+      return grub_error (GRUB_ERR_UNKNOWN_DEVICE, "can't open device");
+    last_devpath = op->open_path;
+  }
 
   if (grub_ieee1275_finddevice (devpath, &dev))
     {
@@ -491,25 +564,18 @@ grub_ofdisk_open (const char *name, grub_disk_t disk)
       return grub_error (GRUB_ERR_UNKNOWN_DEVICE, "not a block device");
     }
 
+
+  finish:
   /* XXX: There is no property to read the number of blocks.  There
      should be a property `#blocks', but it is not there.  Perhaps it
      is possible to use seek for this.  */
   disk->total_sectors = GRUB_DISK_SIZE_UNKNOWN;
 
   {
-    struct ofdisk_hash_ent *op;
-    op = ofdisk_hash_find (devpath);
-    if (!op)
-      op = ofdisk_hash_add (devpath, NULL);
-    if (!op)
-      {
-        grub_free (devpath);
-        return grub_errno;
-      }
     disk->id = (unsigned long) op;
     disk->data = op->open_path;
 
-    err = grub_ofdisk_get_block_size (devpath, &block_size, op);
+    err = grub_ofdisk_get_block_size (&block_size, op);
     if (err)
       {
         grub_free (devpath);
@@ -528,13 +594,6 @@ grub_ofdisk_open (const char *name, grub_disk_t disk)
 static void
 grub_ofdisk_close (grub_disk_t disk)
 {
-  if (disk->data == last_devpath)
-    {
-      if (last_ihandle)
-	grub_ieee1275_close (last_ihandle);
-      last_ihandle = 0;
-      last_devpath = NULL;
-    }
   disk->data = 0;
 }
 
@@ -551,7 +610,7 @@ grub_ofdisk_prepare (grub_disk_t disk, grub_disk_addr_t sector)
       last_ihandle = 0;
       last_devpath = NULL;
 
-      grub_ieee1275_open (disk->data, &last_ihandle);
+      RETRY_IEEE1275_OFDISK_OPEN(disk->data, &last_ihandle);
       if (! last_ihandle)
 	return grub_error (GRUB_ERR_UNKNOWN_DEVICE, "can't open device");
       last_devpath = disk->data;
@@ -578,12 +637,23 @@ grub_ofdisk_read (grub_disk_t disk, grub_disk_addr_t sector,
     return err;
   grub_ieee1275_read (last_ihandle, buf, size  << disk->log_sector_size,
 		      &actual);
-  if (actual != (grub_ssize_t) (size  << disk->log_sector_size))
+  int i = 0;
+  while(actual != (grub_ssize_t) (size  << disk->log_sector_size)){
+    if (i>MAX_RETRIES){
     return grub_error (GRUB_ERR_READ_ERROR, N_("failure reading sector 0x%llx "
 					       "from `%s'"),
 		       (unsigned long long) sector,
 		       disk->name);
+    }
+    last_devpath = NULL;
+    err = grub_ofdisk_prepare (disk, sector);
+    if (err)
+      return err;
 
+    grub_ieee1275_read (last_ihandle, buf, size  << disk->log_sector_size,
+                      &actual);
+    i++;
+  }
   return 0;
 }
 
@@ -625,6 +695,7 @@ insert_bootpath (void)
   char *bootpath;
   grub_ssize_t bootpath_size;
   char *type;
+  grub_size_t sz;
 
   if (grub_ieee1275_get_property_length (grub_ieee1275_chosen, "bootpath",
 					 &bootpath_size)
@@ -635,7 +706,13 @@ insert_bootpath (void)
       return;
     }
 
-  bootpath = (char *) grub_malloc ((grub_size_t) bootpath_size + 64);
+  if (grub_add (bootpath_size, 64, &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow detected while obtaining bootpath size"));
+      return;
+    }
+
+  bootpath = (char *) grub_malloc (sz);
   if (! bootpath)
     {
       grub_print_error ();
@@ -681,7 +758,7 @@ grub_ofdisk_init (void)
 }
 
 static grub_err_t
-grub_ofdisk_get_block_size (const char *device, grub_uint32_t *block_size,
+grub_ofdisk_get_block_size (grub_uint32_t *block_size,
 			    struct ofdisk_hash_ent *op)
 {
   struct size_args_ieee1275
@@ -693,16 +770,6 @@ grub_ofdisk_get_block_size (const char *device, grub_uint32_t *block_size,
       grub_ieee1275_cell_t size1;
       grub_ieee1275_cell_t size2;
     } args_ieee1275;
-
-  if (last_ihandle)
-    grub_ieee1275_close (last_ihandle);
-
-  last_ihandle = 0;
-  last_devpath = NULL;
-
-  grub_ieee1275_open (device, &last_ihandle);
-  if (! last_ihandle)
-    return grub_error (GRUB_ERR_UNKNOWN_DEVICE, "can't open device");
 
   *block_size = 0;
 

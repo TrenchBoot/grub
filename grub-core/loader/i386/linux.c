@@ -37,6 +37,7 @@
 #include <grub/linux.h>
 #include <grub/machine/kernel.h>
 #include <grub/safemath.h>
+#include <grub/efi/sb.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -806,7 +807,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
     }
 
   linux_params.code32_start = prot_mode_target + lh.code32_start - GRUB_LINUX_BZIMAGE_ADDR;
-  linux_params.kernel_alignment = (1 << align);
+  linux_params.kernel_alignment = ((grub_uint32_t)1 << align);
   linux_params.ps_mouse = linux_params.padding11 = 0;
   linux_params.type_of_loader = GRUB_LINUX_BOOT_LOADER_TYPE;
 
@@ -1153,6 +1154,9 @@ static grub_command_t cmd_linux, cmd_initrd;
 
 GRUB_MOD_INIT(linux)
 {
+  if (grub_efi_get_secureboot () == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+    return;
+
   cmd_linux = grub_register_command ("linux", grub_cmd_linux,
 				     0, N_("Load Linux."));
   cmd_initrd = grub_register_command ("initrd", grub_cmd_initrd,
@@ -1162,6 +1166,9 @@ GRUB_MOD_INIT(linux)
 
 GRUB_MOD_FINI(linux)
 {
+  if (grub_efi_get_secureboot () == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+    return;
+
   grub_unregister_command (cmd_linux);
   grub_unregister_command (cmd_initrd);
 }

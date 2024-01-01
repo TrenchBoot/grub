@@ -89,6 +89,8 @@ enum
 #define GRUB_NTFS_COM_SEC		(GRUB_NTFS_COM_LEN >> GRUB_NTFS_BLK_SHR)
 #define GRUB_NTFS_LOG_COM_SEC		(GRUB_NTFS_COM_LOG_LEN - GRUB_NTFS_BLK_SHR)
 
+#define GRUB_NTFS_ATTRIBUTE_HEADER_SIZE 16
+
 enum
   {
     GRUB_NTFS_AF_ALST		= 1,
@@ -134,6 +136,7 @@ struct grub_ntfs_attr
   grub_uint8_t *attr_cur, *attr_nxt, *attr_end;
   grub_uint32_t save_pos;
   grub_uint8_t *sbuf;
+  grub_uint8_t *end;
   struct grub_ntfs_file *mft;
 };
 

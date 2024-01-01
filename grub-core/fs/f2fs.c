@@ -28,6 +28,7 @@
 #include <grub/types.h>
 #include <grub/charset.h>
 #include <grub/fshelp.h>
+#include <grub/safemath.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -872,6 +873,9 @@ grub_f2fs_mount (grub_disk_t disk)
   return data;
 
  fail:
+  if (grub_errno == GRUB_ERR_NONE)
+    grub_error (GRUB_ERR_BAD_FS, "not a F2FS filesystem");
+
   grub_free (data);
 
   return NULL;
@@ -955,6 +959,7 @@ grub_f2fs_read_symlink (grub_fshelp_node_t node)
   char *symlink;
   struct grub_fshelp_node *diro = node;
   grub_uint64_t filesize;
+  grub_size_t sz;
 
   if (!diro->inode_read)
     {
@@ -965,7 +970,12 @@ grub_f2fs_read_symlink (grub_fshelp_node_t node)
 
   filesize = grub_f2fs_file_size(&diro->inode.i);
 
-  symlink = grub_malloc (filesize + 1);
+  if (grub_add (filesize, 1, &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("symlink size overflow"));
+      return 0;
+    }
+  symlink = grub_malloc (sz);
   if (!symlink)
     return 0;
 
@@ -994,6 +1004,7 @@ grub_f2fs_check_dentries (struct grub_f2fs_dir_iter_ctx *ctx)
       enum FILE_TYPE ftype;
       int name_len;
       int ret;
+      int sz;
 
       if (grub_f2fs_test_bit_le (i, ctx->bitmap) == 0)
         {
@@ -1007,7 +1018,12 @@ grub_f2fs_check_dentries (struct grub_f2fs_dir_iter_ctx *ctx)
       if (name_len >= F2FS_NAME_LEN)
         return 0;
 
-      filename = grub_malloc (name_len + 1);
+      if (grub_add (name_len, 1, &sz))
+	{
+	  grub_error (GRUB_ERR_OUT_OF_RANGE, N_("directory entry name length overflow"));
+	  return 0;
+	}
+      filename = grub_malloc (sz);
       if (!filename)
         return 0;
 
@@ -1350,6 +1366,7 @@ static struct grub_fs grub_f2fs_fs = {
 
 GRUB_MOD_INIT (f2fs)
 {
+  grub_f2fs_fs.mod = mod;
   grub_fs_register (&grub_f2fs_fs);
   my_mod = mod;
 }

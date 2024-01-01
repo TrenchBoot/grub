@@ -25,6 +25,7 @@
 #include <grub/dl.h>
 #include <grub/types.h>
 #include <grub/i18n.h>
+#include <grub/lockdown.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -463,7 +464,7 @@ grub_ufs_lookup_symlink (struct grub_ufs_data *data, int ino)
   /* Check against zero is paylindromic, no need to swap.  */
   if (data->inode.nblocks == 0
       && INODE_SIZE (data) <= sizeof (data->inode.symlink))
-    grub_strcpy (symlink, (char *) data->inode.symlink);
+    grub_strlcpy (symlink, (char *) data->inode.symlink, sz);
   else
     {
       if (grub_ufs_read_file (data, 0, 0, 0, sz, symlink) < 0)
@@ -899,7 +900,11 @@ GRUB_MOD_INIT(ufs1)
 #endif
 #endif
 {
-  grub_fs_register (&grub_ufs_fs);
+  if (!grub_is_lockdown ())
+    {
+      grub_ufs_fs.mod = mod;
+      grub_fs_register (&grub_ufs_fs);
+    }
   my_mod = mod;
 }
 
@@ -913,6 +918,7 @@ GRUB_MOD_FINI(ufs1)
 #endif
 #endif
 {
-  grub_fs_unregister (&grub_ufs_fs);
+  if (!grub_is_lockdown ())
+    grub_fs_unregister (&grub_ufs_fs);
 }
 

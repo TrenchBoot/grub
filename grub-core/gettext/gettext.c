@@ -26,6 +26,7 @@
 #include <grub/file.h>
 #include <grub/kernel.h>
 #include <grub/i18n.h>
+#include <grub/safemath.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -99,6 +100,7 @@ grub_gettext_getstr_from_position (struct grub_gettext_context *ctx,
   char *translation;
   struct string_descriptor desc;
   grub_err_t err;
+  grub_size_t alloc_sz;
 
   internal_position = (off + position * sizeof (desc));
 
@@ -109,7 +111,10 @@ grub_gettext_getstr_from_position (struct grub_gettext_context *ctx,
   length = grub_cpu_to_le32 (desc.length);
   offset = grub_cpu_to_le32 (desc.offset);
 
-  translation = grub_malloc (length + 1);
+  if (grub_add (length, 1, &alloc_sz))
+    return NULL;
+
+  translation = grub_malloc (alloc_sz);
   if (!translation)
     return NULL;
 
@@ -323,8 +328,8 @@ grub_mofile_open (struct grub_gettext_context *ctx,
   for (ctx->grub_gettext_max_log = 0; ctx->grub_gettext_max >> ctx->grub_gettext_max_log;
        ctx->grub_gettext_max_log++);
 
-  ctx->grub_gettext_msg_list = grub_zalloc (ctx->grub_gettext_max
-					    * sizeof (ctx->grub_gettext_msg_list[0]));
+  ctx->grub_gettext_msg_list = grub_calloc (ctx->grub_gettext_max,
+					    sizeof (ctx->grub_gettext_msg_list[0]));
   if (!ctx->grub_gettext_msg_list)
     {
       grub_file_close (fd);
@@ -422,6 +427,13 @@ grub_gettext_init_ext (struct grub_gettext_context *ctx,
 	}
 
       grub_free (lang);
+    }
+
+  /* If no translations are available, fall back to untranslated text. */
+  if (err == GRUB_ERR_FILE_NOT_FOUND)
+    {
+      grub_errno = GRUB_ERR_NONE;
+      return 0;
     }
 
   if (locale[0] == 'e' && locale[1] == 'n'
@@ -535,6 +547,10 @@ GRUB_MOD_INIT (gettext)
 
 GRUB_MOD_FINI (gettext)
 {
+  grub_register_variable_hook ("locale_dir", NULL, NULL);
+  grub_register_variable_hook ("secondary_locale_dir", NULL, NULL);
+  grub_register_variable_hook ("lang", NULL, NULL);
+
   grub_gettext_delete_list (&main_context);
   grub_gettext_delete_list (&secondary_context);
 

@@ -26,6 +26,7 @@
 #include <grub/types.h>
 #include <grub/charset.h>
 #include <grub/i18n.h>
+#include <grub/lockdown.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -40,6 +41,13 @@ GRUB_MOD_LICENSE ("GPLv3+");
 #define GRUB_JFS_FS1_INODE_BLK	104
 
 #define GRUB_JFS_TREE_LEAF	2
+
+/*
+ * Define max entries stored in-line in an inode.
+ * https://jfs.sourceforge.net/project/pub/jfslayout.pdf
+ */
+#define GRUB_JFS_INODE_INLINE_ENTRIES	8
+#define GRUB_JFS_DIR_MAX_SLOTS		128
 
 struct grub_jfs_sblock
 {
@@ -203,9 +211,9 @@ struct grub_jfs_inode
 	grub_uint8_t freecnt;
 	grub_uint8_t freelist;
 	grub_uint32_t idotdot;
-	grub_uint8_t sorted[8];
+	grub_uint8_t sorted[GRUB_JFS_INODE_INLINE_ENTRIES];
       } header;
-      struct grub_jfs_leaf_dirent dirents[8];
+      struct grub_jfs_leaf_dirent dirents[GRUB_JFS_INODE_INLINE_ENTRIES];
     } GRUB_PACKED dir;
     /* Fast symlink.  */
     struct
@@ -258,7 +266,21 @@ static grub_dl_t my_mod;
 
 static grub_err_t grub_jfs_lookup_symlink (struct grub_jfs_data *data, grub_uint32_t ino);
 
-static grub_int64_t
+/*
+ * An extent's offset, physical and logical, is represented as a 40-bit value.
+ * This 40-bit value is split into two parts:
+ *   - offset1: the most signficant 8 bits of the offset,
+ *   - offset2: the least significant 32 bits of the offset.
+ *
+ * This function calculates and returns the 64-bit offset of an extent.
+ */
+static grub_uint64_t
+get_ext_offset (grub_uint8_t offset1, grub_uint32_t offset2)
+{
+  return (((grub_uint64_t) offset1 << 32) | grub_le_to_cpu32 (offset2));
+}
+
+static grub_uint64_t
 getblk (struct grub_jfs_treehead *treehead,
 	struct grub_jfs_tree_extent *extents,
 	int max_extents,
@@ -267,28 +289,33 @@ getblk (struct grub_jfs_treehead *treehead,
 {
   int found = -1;
   int i;
+  grub_uint64_t ext_offset, ext_blk;
+
+  grub_errno = GRUB_ERR_NONE;
 
   for (i = 0; i < grub_le_to_cpu16 (treehead->count) - 2 &&
 	      i < max_extents; i++)
     {
+      ext_offset = get_ext_offset (extents[i].offset1, extents[i].offset2);
+      ext_blk = get_ext_offset (extents[i].extent.blk1, extents[i].extent.blk2);
+
       if (treehead->flags & GRUB_JFS_TREE_LEAF)
 	{
 	  /* Read the leafnode.  */
-	  if (grub_le_to_cpu32 (extents[i].offset2) <= blk
+	  if (ext_offset <= blk
 	      && ((grub_le_to_cpu16 (extents[i].extent.length))
 		  + (extents[i].extent.length2 << 16)
-		  + grub_le_to_cpu32 (extents[i].offset2)) > blk)
-	    return (blk - grub_le_to_cpu32 (extents[i].offset2)
-		    + grub_le_to_cpu32 (extents[i].extent.blk2));
+		  + ext_offset) > blk)
+	    return (blk - ext_offset + ext_blk);
 	}
       else
-	if (blk >= grub_le_to_cpu32 (extents[i].offset2))
+	if (blk >= ext_offset)
 	  found = i;
     }
 
   if (found != -1)
     {
-      grub_int64_t ret = -1;
+      grub_uint64_t ret = 0;
       struct
       {
 	struct grub_jfs_treehead treehead;
@@ -297,13 +324,12 @@ getblk (struct grub_jfs_treehead *treehead,
 
       tree = grub_zalloc (sizeof (*tree));
       if (!tree)
-	return -1;
+	return 0;
 
       if (!grub_disk_read (data->disk,
-			   ((grub_disk_addr_t) grub_le_to_cpu32 (extents[found].extent.blk2))
-			   << (grub_le_to_cpu16 (data->sblock.log2_blksz)
-			       - GRUB_DISK_SECTOR_BITS), 0,
-			   sizeof (*tree), (char *) tree))
+			   (grub_disk_addr_t) ext_blk
+			   << (grub_le_to_cpu16 (data->sblock.log2_blksz) - GRUB_DISK_SECTOR_BITS),
+			   0, sizeof (*tree), (char *) tree))
 	{
 	  if (grub_memcmp (&tree->treehead, treehead, sizeof (struct grub_jfs_treehead)) ||
 	      grub_memcmp (&tree->extents, extents, 254 * sizeof (struct grub_jfs_tree_extent)))
@@ -311,19 +337,20 @@ getblk (struct grub_jfs_treehead *treehead,
 	  else
 	    {
 	      grub_error (GRUB_ERR_BAD_FS, "jfs: infinite recursion detected");
-	      ret = -1;
+	      ret = 0;
 	    }
 	}
       grub_free (tree);
       return ret;
     }
 
-  return -1;
+  grub_error (GRUB_ERR_READ_ERROR, "jfs: block %" PRIuGRUB_UINT64_T " not found", blk);
+  return 0;
 }
 
 /* Get the block number for the block BLK in the node INODE in the
    mounted filesystem DATA.  */
-static grub_int64_t
+static grub_uint64_t
 grub_jfs_blkno (struct grub_jfs_data *data, struct grub_jfs_inode *inode,
 		grub_uint64_t blk)
 {
@@ -354,7 +381,7 @@ grub_jfs_read_inode (struct grub_jfs_data *data, grub_uint32_t ino,
 		      sizeof (iag_inodes), &iag_inodes))
     return grub_errno;
 
-  inoblk = grub_le_to_cpu32 (iag_inodes[inoext].blk2);
+  inoblk = get_ext_offset (iag_inodes[inoext].blk1, iag_inodes[inoext].blk2);
   inoblk <<= (grub_le_to_cpu16 (data->sblock.log2_blksz)
 	      - GRUB_DISK_SECTOR_BITS);
   inoblk += inonum;
@@ -453,6 +480,13 @@ grub_jfs_opendir (struct grub_jfs_data *data, struct grub_jfs_inode *inode)
   /* Check if the entire tree is contained within the inode.  */
   if (inode->file.tree.flags & GRUB_JFS_TREE_LEAF)
     {
+      if (inode->dir.header.count > GRUB_JFS_INODE_INLINE_ENTRIES)
+	{
+	  grub_free (diro);
+	  grub_error (GRUB_ERR_BAD_FS, N_("invalid JFS inode"));
+	  return 0;
+	}
+
       diro->leaf = inode->dir.dirents;
       diro->next_leaf = (struct grub_jfs_leaf_next_dirent *) de;
       diro->sorted = inode->dir.header.sorted;
@@ -468,7 +502,16 @@ grub_jfs_opendir (struct grub_jfs_data *data, struct grub_jfs_inode *inode)
       return 0;
     }
 
-  blk = grub_le_to_cpu32 (de[inode->dir.header.sorted[0]].ex.blk2);
+  if (inode->dir.header.sorted[0] >= GRUB_JFS_DIR_MAX_SLOTS)
+    {
+      grub_error (GRUB_ERR_BAD_FS, N_("invalid directory slot index"));
+      grub_free (diro->dirpage);
+      grub_free (diro);
+      return 0;
+    }
+
+  blk = get_ext_offset (de[inode->dir.header.sorted[0]].ex.blk1,
+		      de[inode->dir.header.sorted[0]].ex.blk2);
   blk <<= (grub_le_to_cpu16 (data->sblock.log2_blksz) - GRUB_DISK_SECTOR_BITS);
 
   /* Read in the nodes until we are on the leaf node level.  */
@@ -486,7 +529,7 @@ grub_jfs_opendir (struct grub_jfs_data *data, struct grub_jfs_inode *inode)
 
       de = (struct grub_jfs_internal_dirent *) diro->dirpage->dirent;
       index = diro->dirpage->sorted[diro->dirpage->header.sindex * 32];
-      blk = (grub_le_to_cpu32 (de[index].ex.blk2)
+      blk = (get_ext_offset (de[index].ex.blk1, de[index].ex.blk2)
 	     << (grub_le_to_cpu16 (data->sblock.log2_blksz)
 		 - GRUB_DISK_SECTOR_BITS));
     } while (!(diro->dirpage->header.flags & GRUB_JFS_TREE_LEAF));
@@ -963,11 +1006,16 @@ static struct grub_fs grub_jfs_fs =
 
 GRUB_MOD_INIT(jfs)
 {
-  grub_fs_register (&grub_jfs_fs);
+  if (!grub_is_lockdown ())
+    {
+      grub_jfs_fs.mod = mod;
+      grub_fs_register (&grub_jfs_fs);
+    }
   my_mod = mod;
 }
 
 GRUB_MOD_FINI(jfs)
 {
-  grub_fs_unregister (&grub_jfs_fs);
+  if (!grub_is_lockdown ())
+    grub_fs_unregister (&grub_jfs_fs);
 }

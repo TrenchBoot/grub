@@ -224,10 +224,17 @@ get_name (const grub_uint8_t *name_at, const grub_uint8_t *head,
 {
   int length;
   char *ret;
+  int len;
 
   if (!check_name_real (name_at, head, tail, NULL, &length, NULL))
     return NULL;
-  ret = grub_malloc (length + 1);
+
+  if (grub_add (length, 1, &len))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("name length overflow"));
+      return NULL;
+    }
+  ret = grub_malloc (len);
   if (!ret)
     return NULL;
   if (!check_name_real (name_at, head, tail, NULL, NULL, ret))
@@ -463,8 +470,8 @@ grub_net_dns_lookup (const char *name,
 	  && grub_get_time_ms () < dns_cache[h].limit_time)
 	{
 	  grub_dprintf ("dns", "retrieved from cache\n");
-	  *addresses = grub_malloc (dns_cache[h].naddresses
-				    * sizeof ((*addresses)[0]));
+	  *addresses = grub_calloc (dns_cache[h].naddresses,
+				    sizeof ((*addresses)[0]));
 	  if (!*addresses)
 	    return grub_errno;
 	  *naddresses = dns_cache[h].naddresses;

@@ -207,9 +207,10 @@ grub_normal_init_page (struct grub_term_output *term,
   grub_uint32_t *unicode_msg;
   grub_uint32_t *last_position;
 
-  grub_term_cls (term);
+  if (! grub_debug_is_enabled ())
+    grub_term_cls (term);
 
-  msg_formatted = grub_xasprintf (_("GNU GRUB  version %s"), PACKAGE_VERSION);
+  msg_formatted = grub_xasprintf (_("GRUB version %s"), PACKAGE_VERSION);
   if (!msg_formatted)
     return;
 
@@ -310,52 +311,79 @@ grub_enter_normal_mode (const char *config)
   grub_boot_time ("Exiting normal mode");
 }
 
+static grub_err_t
+grub_try_normal (const char *variable)
+{
+    char *config;
+    const char *prefix;
+    grub_err_t err = GRUB_ERR_FILE_NOT_FOUND;
+    const char *net_search_cfg;
+    int disable_net_search = 0;
+
+    prefix = grub_env_get (variable);
+    if (!prefix)
+      return GRUB_ERR_FILE_NOT_FOUND;
+
+    net_search_cfg = grub_env_get ("feature_net_search_cfg");
+    if (net_search_cfg && net_search_cfg[0] == 'n')
+      disable_net_search = 1;
+
+    if (grub_strncmp (prefix + 1, "tftp", sizeof ("tftp") - 1) == 0 &&
+        !disable_net_search)
+      {
+       grub_size_t config_len;
+       config_len = grub_strlen (prefix) +
+         sizeof ("/grub.cfg-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX");
+       config = grub_malloc (config_len);
+
+       if (! config)
+         return GRUB_ERR_FILE_NOT_FOUND;
+
+       grub_snprintf (config, config_len, "%s/grub.cfg", prefix);
+       err = grub_net_search_config_file (config, config_len);
+      }
+
+    if (err != GRUB_ERR_NONE)
+      {
+       config = grub_xasprintf ("%s/grub.cfg", prefix);
+       if (config)
+         {
+           grub_file_t file;
+           file = grub_file_open (config, GRUB_FILE_TYPE_CONFIG);
+           if (file)
+             {
+               grub_file_close (file);
+               err = GRUB_ERR_NONE;
+             }
+         }
+      }
+
+    if (err == GRUB_ERR_NONE)
+      grub_enter_normal_mode (config);
+
+    grub_errno = 0;
+    grub_free (config);
+    return err;
+}
+
 /* Enter normal mode from rescue mode.  */
 static grub_err_t
 grub_cmd_normal (struct grub_command *cmd __attribute__ ((unused)),
 		 int argc, char *argv[])
 {
-  if (argc == 0)
-    {
-      /* Guess the config filename. It is necessary to make CONFIG static,
-	 so that it won't get broken by longjmp.  */
-      char *config;
-      const char *prefix;
-
-      prefix = grub_env_get ("prefix");
-      if (prefix)
-        {
-          grub_size_t config_len;
-          int disable_net_search = 0;
-          const char *net_search_cfg;
-
-          config_len = grub_strlen (prefix) +
-                       sizeof ("/grub.cfg-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX");
-          config = grub_malloc (config_len);
-
-          if (!config)
-            goto quit;
-
-          grub_snprintf (config, config_len, "%s/grub.cfg", prefix);
-
-          net_search_cfg = grub_env_get ("feature_net_search_cfg");
-          if (net_search_cfg && net_search_cfg[0] == 'n')
-            disable_net_search = 1;
-
-          if (grub_strncmp (prefix + 1, "tftp", sizeof ("tftp") - 1) == 0 &&
-              !disable_net_search)
-            grub_net_search_config_file (config);
-
-	  grub_enter_normal_mode (config);
-	  grub_free (config);
-	}
-      else
-	grub_enter_normal_mode (0);
-    }
-  else
+  if (argc)
     grub_enter_normal_mode (argv[0]);
+  else
+    {
+      /* Guess the config filename. */
+      grub_err_t err;
+      err = grub_try_normal ("fw_path");
+      if (err == GRUB_ERR_FILE_NOT_FOUND)
+        err = grub_try_normal ("prefix");
+      if (err == GRUB_ERR_FILE_NOT_FOUND)
+        grub_enter_normal_mode (0);
+    }
 
-quit:
   return 0;
 }
 
@@ -582,7 +610,9 @@ GRUB_MOD_FINI(normal)
   grub_xputs = grub_xputs_saved;
 
   grub_set_history (0);
-  grub_register_variable_hook ("pager", 0, 0);
+  grub_register_variable_hook ("pager", NULL, NULL);
+  grub_register_variable_hook ("color_normal", NULL, NULL);
+  grub_register_variable_hook ("color_highlight", NULL, NULL);
   grub_fs_autoload_hook = 0;
   grub_unregister_command (cmd_clear);
 }

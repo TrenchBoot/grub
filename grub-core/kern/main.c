@@ -128,16 +128,24 @@ grub_set_prefix_and_root (void)
 
   grub_machine_get_bootlocation (&fwdevice, &fwpath);
 
-  if (fwdevice)
+  if (fwdevice && fwpath)
     {
-      char *cmdpath;
+      char *fw_path;
+      char separator[3] = ")";
 
-      cmdpath = grub_xasprintf ("(%s)%s", fwdevice, fwpath ? : "");
-      if (cmdpath)
+      grub_dprintf ("fw_path", "\n");
+      grub_dprintf ("fw_path", "fwdevice:\"%s\" fwpath:\"%s\"\n", fwdevice, fwpath);
+
+      if (!grub_strncmp(fwdevice, "http", 4) && fwpath[0] != '/')
+	grub_strcpy(separator, ")/");
+
+      fw_path = grub_xasprintf ("(%s%s%s", fwdevice, separator, fwpath);
+      if (fw_path)
 	{
-	  grub_env_set ("cmdpath", cmdpath);
-	  grub_env_export ("cmdpath");
-	  grub_free (cmdpath);
+	  grub_env_set ("fw_path", fw_path);
+	  grub_env_export ("fw_path");
+	  grub_dprintf ("fw_path", "fw_path:\"%s\"\n", fw_path);
+	  grub_free (fw_path);
 	}
     }
 

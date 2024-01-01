@@ -26,6 +26,7 @@
 #include <grub/i18n.h>
 #include <grub/types.h>
 #include <grub/charset.h>
+#include <grub/backtrace.h>
 
 union printf_arg
 {
@@ -181,6 +182,19 @@ grub_err_printf (const char *fmt, ...)
 int grub_err_printf (const char *fmt, ...)
 __attribute__ ((alias("grub_printf")));
 #endif
+
+/* Return 1 if 'debug' is set and not empty */
+int
+grub_debug_is_enabled (void)
+{
+  const char *debug;
+
+  debug = grub_env_get ("debug");
+  if (!debug || debug[0] == '\0')
+    return 0;
+
+  return 1;
+}
 
 int
 grub_debug_enabled (const char * condition)
@@ -611,6 +625,36 @@ grub_reverse (char *str)
     }
 }
 
+/* Separate string into two parts, broken up by delimiter delim. */
+void
+grub_str_sep (const char *s, char *p, char delim, char *r)
+{
+  char* t = grub_strndup(s, grub_strlen(s));
+
+  if (t != NULL && *t != '\0')
+  {
+    char* tmp = t;
+  
+    while (((*p = *t) != '\0') && ((*p = *t) != delim))
+    {
+      p++;
+      t++;
+    }
+    *p = '\0';
+  
+    if (*t != '\0')
+    {
+      t++;
+      while ((*r++ = *t++) != '\0')
+        ;
+      *r = '\0';
+    }
+    grub_free (tmp);
+  }
+  else
+    grub_free (t);
+}
+
 /* Divide N by D, return the quotient, and store the remainder in *R.  */
 grub_uint64_t
 grub_divmod64 (grub_uint64_t n, grub_uint64_t d, grub_uint64_t *r)
@@ -830,7 +874,7 @@ parse_printf_arg_fmt (const char *fmt0, struct printf_args *args,
   while ((c = *fmt++) != 0)
     {
       int longfmt = 0;
-      grub_size_t curn;
+      unsigned long curn;
       const char *p;
 
       if (c != '%')
@@ -848,7 +892,10 @@ parse_printf_arg_fmt (const char *fmt0, struct printf_args *args,
 
       if (*fmt == '$')
 	{
-	  curn = grub_strtoull (p, 0, 10) - 1;
+	  curn = grub_strtoul (p, 0, 10);
+	  if (curn == 0)
+	    continue;
+	  curn--;
 	  fmt++;
 	}
 
@@ -1034,6 +1081,8 @@ grub_vsnprintf_real (char *str, grub_size_t max_len, const char *fmt0,
 
       if (*fmt == '$')
 	{
+	  if (format1 == 0)
+	    continue;
 	  curn = format1 - 1;
 	  fmt++;
 	  format1 = 0;
@@ -1301,6 +1350,11 @@ grub_printf_fmt_check (const char *fmt, const char *fmt_expected)
 void __attribute__ ((noreturn))
 grub_abort (void)
 {
+#ifndef GRUB_UTIL
+#if defined(__i386__) || defined(__x86_64__)
+  grub_backtrace();
+#endif
+#endif
   grub_printf ("\nAborted.");
 
 #ifndef GRUB_UTIL

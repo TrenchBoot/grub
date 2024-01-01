@@ -199,6 +199,9 @@ kernel = {
 
   softdiv = lib/division.c;
 
+  x86 = lib/i386/backtrace.c;
+  x86 = lib/backtrace.c;
+
   i386 = kern/i386/dl.c;
   i386_xen = kern/i386/dl.c;
   i386_xen_pvh = kern/i386/dl.c;
@@ -219,6 +222,7 @@ kernel = {
   efi = kern/efi/acpi.c;
   efi = kern/efi/sb.c;
   efi = kern/lockdown.c;
+  efi = lib/envblk.c;
   i386_coreboot = kern/i386/pc/acpi.c;
   i386_multiboot = kern/i386/pc/acpi.c;
   i386_coreboot = kern/acpi.c;
@@ -407,6 +411,11 @@ kernel = {
   extra_dist = kern/i386/realmode.S;
   extra_dist = boot/i386/pc/lzma_decode.S;
   extra_dist = kern/mips/cache_flush.S;
+};
+
+module = {
+  name = increment;
+  common = commands/increment.c;
 };
 
 program = {
@@ -821,6 +830,12 @@ module = {
 module = {
   name = lsefi;
   common = commands/efi/lsefi.c;
+  enable = efi;
+};
+
+module = {
+  name = efienv;
+  common = commands/efi/env.c;
   enable = efi;
 };
 
@@ -2339,6 +2354,12 @@ module = {
 };
 
 module = {
+  name = efi_netfs;
+  common = net/efi/efi_netfs.c;
+  enable = efi;
+};
+
+module = {
   name = net;
   common = net/net.c;
   common = net/dns.c;
@@ -2351,6 +2372,12 @@ module = {
   common = net/ethernet.c;
   common = net/arp.c;
   common = net/netbuff.c;
+  efi = net/efi/net.c;
+  efi = net/efi/http.c;
+  efi = net/efi/pxe.c;
+  efi = net/efi/ip4_config.c;
+  efi = net/efi/ip6_config.c;
+  efi = net/efi/dhcp.c;
 };
 
 module = {
@@ -2594,4 +2621,5 @@ module = {
   name = bli;
   efi = commands/bli.c;
   enable = efi;
+  depends = part_gpt;
 };

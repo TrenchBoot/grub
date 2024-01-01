@@ -88,7 +88,10 @@ GRUB_MOD_LICENSE ("GPLv3+");
 #define XFS_SB_FEAT_INCOMPAT_META_UUID  (1 << 2)        /* metadata UUID */
 #define XFS_SB_FEAT_INCOMPAT_BIGTIME    (1 << 3)        /* large timestamps */
 #define XFS_SB_FEAT_INCOMPAT_NEEDSREPAIR (1 << 4)       /* needs xfs_repair */
-#define XFS_SB_FEAT_INCOMPAT_NREXT64 (1 << 5)           /* large extent counters */
+#define XFS_SB_FEAT_INCOMPAT_NREXT64    (1 << 5)        /* large extent counters */
+#define XFS_SB_FEAT_INCOMPAT_EXCHRANGE  (1 << 6)        /* exchangerange supported */
+#define XFS_SB_FEAT_INCOMPAT_PARENT     (1 << 7)        /* parent pointers */
+#define XFS_SB_FEAT_INCOMPAT_METADIR    (1 << 8)        /* metadata dir tree */
 
 /*
  * Directory entries with ftype are explicitly handled by GRUB code.
@@ -98,6 +101,15 @@ GRUB_MOD_LICENSE ("GPLv3+");
  *
  * We do not currently verify metadata UUID, so it is safe to read filesystems
  * with the XFS_SB_FEAT_INCOMPAT_META_UUID feature.
+ *
+ * We do not currently replay the log, so it is safe to read filesystems
+ * with the XFS_SB_FEAT_INCOMPAT_EXCHRANGE feature.
+ *
+ * We do not currently read directory parent pointers, so it is safe to read
+ * filesystems with the XFS_SB_FEAT_INCOMPAT_PARENT feature.
+ *
+ * We do not currently look at realtime or quota metadata, so it is safe to
+ * read filesystems with the XFS_SB_FEAT_INCOMPAT_METADIR feature.
  */
 #define XFS_SB_FEAT_INCOMPAT_SUPPORTED \
 	(XFS_SB_FEAT_INCOMPAT_FTYPE | \
@@ -105,7 +117,10 @@ GRUB_MOD_LICENSE ("GPLv3+");
 	 XFS_SB_FEAT_INCOMPAT_META_UUID | \
 	 XFS_SB_FEAT_INCOMPAT_BIGTIME | \
 	 XFS_SB_FEAT_INCOMPAT_NEEDSREPAIR | \
-	 XFS_SB_FEAT_INCOMPAT_NREXT64)
+	 XFS_SB_FEAT_INCOMPAT_NREXT64 | \
+	 XFS_SB_FEAT_INCOMPAT_EXCHRANGE | \
+	 XFS_SB_FEAT_INCOMPAT_PARENT | \
+	 XFS_SB_FEAT_INCOMPAT_METADIR)
 
 struct grub_xfs_sblock
 {
@@ -327,6 +342,8 @@ static int grub_xfs_sb_valid(struct grub_xfs_data *data)
 	}
       return 1;
     }
+
+  grub_error (GRUB_ERR_BAD_FS, "unsupported XFS filesystem version");
   return 0;
 }
 
@@ -595,6 +612,17 @@ grub_xfs_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
       do
         {
           grub_uint64_t i;
+	  grub_addr_t keys_end, data_end;
+
+	  if (grub_mul (sizeof (grub_uint64_t), nrec, &keys_end) ||
+	      grub_add ((grub_addr_t) keys, keys_end, &keys_end) ||
+	      grub_add ((grub_addr_t) node->data, node->data->data_size, &data_end) ||
+	      keys_end > data_end)
+	    {
+	      grub_error (GRUB_ERR_BAD_FS, "invalid number of XFS root keys");
+	      grub_free (leaf);
+	      return 0;
+	    }
 
           for (i = 0; i < nrec; i++)
             {
@@ -705,6 +733,7 @@ static char *
 grub_xfs_read_symlink (grub_fshelp_node_t node)
 {
   grub_ssize_t size = grub_be_to_cpu64 (node->inode.size);
+  grub_size_t sz;
 
   if (size < 0)
     {
@@ -726,7 +755,12 @@ grub_xfs_read_symlink (grub_fshelp_node_t node)
 	if (node->data->hascrc)
 	  off = 56;
 
-	symlink = grub_malloc (size + 1);
+	if (grub_add (size, 1, &sz))
+	  {
+	    grub_error (GRUB_ERR_OUT_OF_RANGE, N_("symlink size overflow"));
+	    return 0;
+	  }
+	symlink = grub_malloc (sz);
 	if (!symlink)
 	  return 0;
 
@@ -776,8 +810,15 @@ static int iterate_dir_call_hook (grub_uint64_t ino, const char *filename,
 {
   struct grub_fshelp_node *fdiro;
   grub_err_t err;
+  grub_size_t sz;
 
-  fdiro = grub_malloc (grub_xfs_fshelp_size(ctx->diro->data) + 1);
+  if (grub_add (grub_xfs_fshelp_size(ctx->diro->data), 1, &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("directory data size overflow"));
+      grub_print_error ();
+      return 0;
+    }
+  fdiro = grub_malloc (sz);
   if (!fdiro)
     {
       grub_print_error ();
@@ -902,6 +943,7 @@ grub_xfs_iterate_dir (grub_fshelp_node_t dir,
 					grub_xfs_first_de(dir->data, dirblock);
 	    int entries = -1;
 	    char *end = dirblock + dirblk_size;
+	    grub_uint32_t magic;
 
 	    numread = grub_xfs_read_file (dir, 0, 0,
 					  blk << dirblk_log2,
@@ -913,10 +955,19 @@ grub_xfs_iterate_dir (grub_fshelp_node_t dir,
 	      }
 
 	    /*
+	     * If this data block isn't actually part of the extent list then
+	     * grub_xfs_read_file() returns a block of zeros. So, if the magic
+	     * number field is all zeros then this block should be skipped.
+	     */
+	    magic = *(grub_uint32_t *)(void *) dirblock;
+	    if (!magic)
+	      continue;
+
+	    /*
 	     * Leaf and tail information are only in the data block if the number
 	     * of extents is 1.
 	     */
-	    if (dir->inode.nextents == grub_cpu_to_be32_compile_time (1))
+	    if (grub_xfs_get_inode_nextents(&dir->inode) == 1)
 	      {
 		struct grub_xfs_dirblock_tail *tail = grub_xfs_dir_tail (dir->data, dirblock);
 
@@ -970,7 +1021,7 @@ grub_xfs_iterate_dir (grub_fshelp_node_t dir,
 		 * The expected number of directory entries is only tracked for the
 		 * single extent case.
 		 */
-		if (dir->inode.nextents == grub_cpu_to_be32_compile_time (1))
+		if (grub_xfs_get_inode_nextents(&dir->inode) == 1)
 		  {
 		    /* Check if last direntry in this block is reached. */
 		    entries--;
@@ -1047,7 +1098,7 @@ grub_xfs_mount (grub_disk_t disk)
   return data;
  fail:
 
-  if (grub_errno == GRUB_ERR_OUT_OF_RANGE)
+  if (grub_errno == GRUB_ERR_OUT_OF_RANGE || grub_errno == GRUB_ERR_NONE)
     grub_error (GRUB_ERR_BAD_FS, "not an XFS filesystem");
 
   grub_free (data);
@@ -1281,6 +1332,7 @@ static struct grub_fs grub_xfs_fs =
 
 GRUB_MOD_INIT(xfs)
 {
+  grub_xfs_fs.mod = mod;
   grub_fs_register (&grub_xfs_fs);
   my_mod = mod;
 }

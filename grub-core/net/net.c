@@ -32,6 +32,10 @@
 #include <grub/loader.h>
 #include <grub/bufio.h>
 #include <grub/kernel.h>
+#include <grub/safemath.h>
+#ifdef GRUB_MACHINE_EFI
+#include <grub/net/efi.h>
+#endif
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -87,8 +91,8 @@ grub_net_link_layer_add_address (struct grub_net_card *card,
   /* Add sender to cache table.  */
   if (card->link_layer_table == NULL)
     {
-      card->link_layer_table = grub_zalloc (LINK_LAYER_CACHE_SIZE
-					    * sizeof (card->link_layer_table[0]));
+      card->link_layer_table = grub_calloc (LINK_LAYER_CACHE_SIZE,
+					    sizeof (card->link_layer_table[0]));
       if (card->link_layer_table == NULL)
 	return;
     }
@@ -206,6 +210,7 @@ grub_net_ipv6_get_slaac (struct grub_net_card *card,
 {
   struct grub_net_slaac_mac_list *slaac;
   char *ptr;
+  grub_size_t sz;
 
   for (slaac = card->slaac_list; slaac; slaac = slaac->next)
     if (grub_net_hwaddr_cmp (&slaac->address, hwaddr) == 0)
@@ -215,9 +220,21 @@ grub_net_ipv6_get_slaac (struct grub_net_card *card,
   if (!slaac)
     return NULL;
 
-  slaac->name = grub_malloc (grub_strlen (card->name)
-			     + GRUB_NET_MAX_STR_HWADDR_LEN
-			     + sizeof (":slaac"));
+  if (grub_add (grub_strlen (card->name),
+      (GRUB_NET_MAX_STR_HWADDR_LEN + sizeof (":slaac")), &sz))
+    {
+      grub_free (slaac);
+      grub_error (GRUB_ERR_OUT_OF_RANGE,
+		  "overflow detected while obtaining size of slaac name");
+      return NULL;
+    }
+
+  slaac->name = grub_malloc (sz);
+  if (slaac->name == NULL)
+    {
+      grub_free (slaac);
+      return NULL;
+    }
   ptr = grub_stpcpy (slaac->name, card->name);
   if (grub_net_hwaddr_cmp (&card->default_address, hwaddr) != 0)
     {
@@ -288,6 +305,7 @@ grub_net_ipv6_get_link_local (struct grub_net_card *card,
   char *name;
   char *ptr;
   grub_net_network_level_address_t addr;
+  grub_size_t sz;
 
   addr.type = GRUB_NET_NETWORK_LEVEL_PROTOCOL_IPV6;
   addr.ipv6[0] = grub_cpu_to_be64_compile_time (0xfe80ULL << 48);
@@ -302,9 +320,14 @@ grub_net_ipv6_get_link_local (struct grub_net_card *card,
       return inf;
   }
 
-  name = grub_malloc (grub_strlen (card->name)
-		      + GRUB_NET_MAX_STR_HWADDR_LEN
-		      + sizeof (":link"));
+  if (grub_add (grub_strlen (card->name),
+      (GRUB_NET_MAX_STR_HWADDR_LEN + sizeof (":link")), &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE,
+		  "overflow detected while obtaining size of link name");
+      return NULL;
+    }
+  name = grub_malloc (sz);
   if (!name)
     return NULL;
 
@@ -984,6 +1007,111 @@ grub_net_network_level_interface_register (struct grub_net_network_level_interfa
   grub_net_network_level_interfaces = inter;
 }
 
+int
+grub_ipv6_get_masksize (grub_uint16_t *be_mask)
+{
+  grub_uint8_t *mask;
+  grub_uint16_t mask16[8];
+  int x, y;
+  int ret = 128;
+
+  grub_memcpy (mask16, be_mask, sizeof (mask16));
+  for (x = 0; x < 8; x++)
+    mask16[x] = grub_be_to_cpu16 (mask16[x]);
+
+  mask = (grub_uint8_t *)mask16;
+
+  for (x = 15; x >= 0; x--)
+    {
+      grub_uint8_t octet = mask[x];
+      if (!octet)
+	{
+	  ret -= 8;
+	  continue;
+	}
+      for (y = 0; y < 8; y++)
+	{
+	  if (octet & (1 << y))
+	    break;
+	  else
+	    ret--;
+	}
+      break;
+    }
+
+  return ret;
+}
+
+grub_err_t
+grub_net_add_ipv6_local (struct grub_net_network_level_interface *inter,
+			 int mask)
+{
+  struct grub_net_route *route;
+
+  if (inter->address.type != GRUB_NET_NETWORK_LEVEL_PROTOCOL_IPV6)
+    return 0;
+
+  if (mask == -1)
+      mask = grub_ipv6_get_masksize ((grub_uint16_t *)inter->address.ipv6);
+
+  if (mask == -1)
+    return 0;
+
+  route = grub_zalloc (sizeof (*route));
+  if (!route)
+    return grub_errno;
+
+  route->name = grub_xasprintf ("%s:local", inter->name);
+  if (!route->name)
+    {
+      grub_free (route);
+      return grub_errno;
+    }
+
+  route->target.type = GRUB_NET_NETWORK_LEVEL_PROTOCOL_IPV6;
+  grub_memcpy (route->target.ipv6.base, inter->address.ipv6,
+	       sizeof (inter->address.ipv6));
+  route->target.ipv6.masksize = mask;
+  route->is_gateway = 0;
+  route->interface = inter;
+
+  grub_net_route_register (route);
+
+  return 0;
+}
+
+void
+grub_net_network_level_interface_unregister (struct grub_net_network_level_interface *inter)
+{
+  char *name;
+
+    {
+      char buf[GRUB_NET_MAX_STR_HWADDR_LEN];
+
+      grub_net_hwaddr_to_str (&inter->hwaddress, buf);
+      name = grub_xasprintf ("net_%s_mac", inter->name);
+      if (name != NULL)
+        grub_register_variable_hook (name, NULL, NULL);
+      grub_free (name);
+    }
+
+    {
+      char buf[GRUB_NET_MAX_STR_ADDR_LEN];
+
+      grub_net_addr_to_str (&inter->address, buf);
+      name = grub_xasprintf ("net_%s_ip", inter->name);
+      if (name != NULL)
+        grub_register_variable_hook (name, NULL, NULL);
+      grub_free (name);
+    }
+
+    inter->card->num_ifaces--;
+    *inter->prev = inter->next;
+    if (inter->next)
+      inter->next->prev = inter->prev;
+    inter->next = 0;
+    inter->prev = 0;
+}
 
 grub_err_t
 grub_net_add_ipv4_local (struct grub_net_network_level_interface *inter,
@@ -1402,9 +1530,15 @@ grub_net_open_real (const char *name)
 	  if (grub_strchr (port_start + 1, ':'))
 	    {
 	      int iplen = grub_strlen (server);
+	      grub_size_t sz;
 
 	      /* Bracket bare IPv6 addr. */
-	      host = grub_malloc (iplen + 3);
+	      if (grub_add (iplen, 3, &sz))
+		{
+		  grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow detected while obtaining length of host"));
+		  return NULL;
+		}
+	      host = grub_malloc (sz);
 	      if (!host)
                 return NULL;
 
@@ -1659,6 +1793,7 @@ grub_env_set_net_property (const char *intername, const char *suffix,
 {
   char *varname, *varvalue;
   char *ptr;
+  grub_size_t sz;
 
   varname = grub_xasprintf ("net_%s_%s", intername, suffix);
   if (!varname)
@@ -1666,7 +1801,12 @@ grub_env_set_net_property (const char *intername, const char *suffix,
   for (ptr = varname; *ptr; ptr++)
     if (*ptr == ':')
       *ptr = '_';
-  varvalue = grub_malloc (len + 1);
+  if (grub_add (len, 1, &sz))
+    {
+      grub_free (varname);
+      return grub_error (GRUB_ERR_OUT_OF_RANGE, "overflow detected while obtaining the size of an env variable");
+    }
+  varvalue = grub_malloc (sz);
   if (!varvalue)
     {
       grub_free (varname);
@@ -1909,14 +2049,15 @@ grub_config_search_through (char *config, char *suffix,
 }
 
 grub_err_t
-grub_net_search_config_file (char *config)
+grub_net_search_config_file (char *config, grub_size_t config_buf_len)
 {
-  grub_size_t config_len;
+  grub_size_t config_len, suffix_len;
   char *suffix;
 
   config_len = grub_strlen (config);
   config[config_len] = '-';
   suffix = config + config_len + 1;
+  suffix_len = config_buf_len - (config_len + 1);
 
   struct grub_net_network_level_interface *inf;
   FOR_NET_NETWORK_LEVEL_INTERFACES (inf)
@@ -1942,7 +2083,7 @@ grub_net_search_config_file (char *config)
 
       if (client_uuid)
         {
-          grub_strcpy (suffix, client_uuid);
+          grub_strlcpy (suffix, client_uuid, suffix_len);
           if (grub_config_search_through (config, suffix, 1, 0) == 0)
             return GRUB_ERR_NONE;
         }
@@ -2005,7 +2146,7 @@ grub_net_search_config_file (char *config)
   /* Remove the remaining minus sign at the end. */
   config[config_len] = '\0';
 
-  return GRUB_ERR_NONE;
+  return GRUB_ERR_FILE_NOT_FOUND;
 }
 
 static struct grub_preboot *fini_hnd;
@@ -2014,8 +2155,49 @@ static grub_command_t cmd_addaddr, cmd_deladdr, cmd_addroute, cmd_delroute;
 static grub_command_t cmd_setvlan, cmd_lsroutes, cmd_lscards;
 static grub_command_t cmd_lsaddr, cmd_slaac;
 
+#ifdef GRUB_MACHINE_EFI
+
+static enum {
+  INIT_MODE_NONE,
+  INIT_MODE_GRUB,
+  INIT_MODE_EFI
+} init_mode;
+
+static grub_command_t cmd_bootp, cmd_bootp6;
+
+#endif
+
 GRUB_MOD_INIT(net)
 {
+#ifdef GRUB_MACHINE_EFI
+  if (grub_net_open)
+    return;
+
+  if ((grub_efi_net_boot_from_https () || grub_efi_net_boot_from_opa ())
+      && grub_efi_net_fs_init ())
+    {
+      cmd_lsroutes = grub_register_command ("net_ls_routes", grub_efi_net_list_routes,
+					    "", N_("list network routes"));
+      cmd_lscards = grub_register_command ("net_ls_cards", grub_efi_net_list_cards,
+					   "", N_("list network cards"));
+      cmd_lsaddr = grub_register_command ("net_ls_addr", grub_efi_net_list_addrs,
+					  "", N_("list network addresses"));
+      cmd_addaddr = grub_register_command ("net_add_addr", grub_efi_net_add_addr,
+					    /* TRANSLATORS: HWADDRESS stands for
+					       "hardware address".  */
+					  N_("SHORTNAME CARD ADDRESS [HWADDRESS]"),
+					  N_("Add a network address."));
+      cmd_bootp = grub_register_command ("net_bootp", grub_efi_net_bootp,
+					 N_("[CARD]"),
+					 N_("perform a bootp autoconfiguration"));
+      cmd_bootp6 = grub_register_command ("net_bootp6", grub_efi_net_bootp6,
+					 N_("[CARD]"),
+					 N_("perform a bootp autoconfiguration"));
+      init_mode = INIT_MODE_EFI;
+      return;
+    }
+#endif
+
   grub_register_variable_hook ("net_default_server", defserver_get_env,
 			       defserver_set_env);
   grub_env_export ("net_default_server");
@@ -2066,12 +2248,41 @@ GRUB_MOD_INIT(net)
 						grub_net_restore_hw,
 						GRUB_LOADER_PREBOOT_HOOK_PRIO_DISK);
   grub_net_poll_cards_idle = grub_net_poll_cards_idle_real;
+
+#ifdef GRUB_MACHINE_EFI
+  grub_env_set ("grub_netfs_type", "grub");
+  grub_register_variable_hook ("grub_netfs_type", 0, grub_env_write_readonly);
+  grub_env_export ("grub_netfs_type");
+  init_mode = INIT_MODE_GRUB;
+#endif
+
 }
 
 GRUB_MOD_FINI(net)
 {
+
+#ifdef GRUB_MACHINE_EFI
+  if (init_mode == INIT_MODE_NONE)
+    return;
+
+  if (init_mode == INIT_MODE_EFI)
+    {
+      grub_unregister_command (cmd_lsroutes);
+      grub_unregister_command (cmd_lscards);
+      grub_unregister_command (cmd_lsaddr);
+      grub_unregister_command (cmd_addaddr);
+      grub_unregister_command (cmd_bootp);
+      grub_unregister_command (cmd_bootp6);
+      grub_efi_net_fs_fini ();
+      init_mode = INIT_MODE_NONE;
+      return;
+    }
+#endif
+
   grub_register_variable_hook ("net_default_server", 0, 0);
   grub_register_variable_hook ("pxe_default_server", 0, 0);
+  grub_register_variable_hook ("net_default_ip", 0, 0);
+  grub_register_variable_hook ("net_default_mac", 0, 0);
 
   grub_bootp_fini ();
   grub_dns_fini ();
@@ -2088,4 +2299,7 @@ GRUB_MOD_FINI(net)
   grub_net_fini_hw (0);
   grub_loader_unregister_preboot_hook (fini_hnd);
   grub_net_poll_cards_idle = NULL;
+#ifdef GRUB_MACHINE_EFI
+  init_mode = INIT_MODE_NONE;
+#endif
 }

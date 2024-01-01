@@ -32,6 +32,7 @@
 #include <grub/env.h>
 #include <grub/cache.h>
 #include <grub/i18n.h>
+#include <grub/safemath.h>
 
 /* Platforms where modules are in a readonly area of memory.  */
 #if defined(GRUB_MACHINE_QEMU)
@@ -224,22 +225,37 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
 {
   unsigned i;
   const Elf_Shdr *s;
-  grub_size_t tsize = 0, talign = 1;
+  grub_size_t tsize = 0, talign = 1, arch_addralign = 1;
 #if !defined (__i386__) && !defined (__x86_64__) && !defined(__riscv) && \
   !defined (__loongarch__)
   grub_size_t tramp;
+  grub_size_t tramp_align;
   grub_size_t got;
+  grub_size_t got_align;
   grub_err_t err;
 #endif
   char *ptr;
+
+  grub_dprintf ("modules", "loading segments for \"%s\"\n", mod->name);
+
+  arch_addralign = grub_arch_dl_min_alignment ();
 
   for (i = 0, s = (const Elf_Shdr *)((const char *) e + e->e_shoff);
        i < e->e_shnum;
        i++, s = (const Elf_Shdr *)((const char *) s + e->e_shentsize))
     {
-      tsize = ALIGN_UP (tsize, s->sh_addralign) + s->sh_size;
-      if (talign < s->sh_addralign)
-	talign = s->sh_addralign;
+      grub_size_t sh_addralign;
+      grub_size_t sh_size;
+
+      if (s->sh_size == 0 || !(s->sh_flags & SHF_ALLOC))
+	continue;
+
+      sh_addralign = ALIGN_UP(s->sh_addralign, arch_addralign);
+      sh_size = ALIGN_UP(s->sh_size, sh_addralign);
+
+      tsize = ALIGN_UP (tsize, sh_addralign) + sh_size;
+      if (talign < sh_addralign)
+	talign = sh_addralign;
     }
 
 #if !defined (__i386__) && !defined (__x86_64__) && !defined(__riscv) && \
@@ -247,12 +263,18 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
   err = grub_arch_dl_get_tramp_got_size (e, &tramp, &got);
   if (err)
     return err;
-  tsize += ALIGN_UP (tramp, GRUB_ARCH_DL_TRAMP_ALIGN);
-  if (talign < GRUB_ARCH_DL_TRAMP_ALIGN)
-    talign = GRUB_ARCH_DL_TRAMP_ALIGN;
-  tsize += ALIGN_UP (got, GRUB_ARCH_DL_GOT_ALIGN);
-  if (talign < GRUB_ARCH_DL_GOT_ALIGN)
-    talign = GRUB_ARCH_DL_GOT_ALIGN;
+  tramp_align = GRUB_ARCH_DL_TRAMP_ALIGN;
+  if (tramp_align < arch_addralign)
+    tramp_align = arch_addralign;
+  tsize += ALIGN_UP (tramp, tramp_align);
+  if (talign < tramp_align)
+    talign = tramp_align;
+  got_align = GRUB_ARCH_DL_GOT_ALIGN;
+  if (got_align < arch_addralign)
+    got_align = arch_addralign;
+  tsize += ALIGN_UP (got, got_align);
+  if (talign < got_align)
+    talign = got_align;
 #endif
 
 #ifdef GRUB_MACHINE_EMU
@@ -269,6 +291,9 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
        i < e->e_shnum;
        i++, s = (Elf_Shdr *)((char *) s + e->e_shentsize))
     {
+      grub_size_t sh_addralign = ALIGN_UP(s->sh_addralign, arch_addralign);
+      grub_size_t sh_size = ALIGN_UP(s->sh_size, sh_addralign);
+
       if (s->sh_flags & SHF_ALLOC)
 	{
 	  grub_dl_segment_t seg;
@@ -281,17 +306,19 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
 	    {
 	      void *addr;
 
-	      ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, s->sh_addralign);
+	      ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, sh_addralign);
 	      addr = ptr;
-	      ptr += s->sh_size;
+	      ptr += sh_size;
 
 	      switch (s->sh_type)
 		{
 		case SHT_PROGBITS:
 		  grub_memcpy (addr, (char *) e + s->sh_offset, s->sh_size);
+		  grub_memset ((char *)addr + s->sh_size, 0,
+			       sh_size - s->sh_size);
 		  break;
 		case SHT_NOBITS:
-		  grub_memset (addr, 0, s->sh_size);
+		  grub_memset (addr, 0, sh_size);
 		  break;
 		}
 
@@ -300,7 +327,7 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
 	  else
 	    seg->addr = 0;
 
-	  seg->size = s->sh_size;
+	  seg->size = sh_size;
 	  seg->section = i;
 	  seg->next = mod->segment;
 	  mod->segment = seg;
@@ -308,16 +335,17 @@ grub_dl_load_segments (grub_dl_t mod, const Elf_Ehdr *e)
     }
 #if !defined (__i386__) && !defined (__x86_64__) && !defined(__riscv) && \
   !defined (__loongarch__)
-  ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, GRUB_ARCH_DL_TRAMP_ALIGN);
+  ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, tramp_align);
   mod->tramp = ptr;
   mod->trampptr = ptr;
   ptr += tramp;
-  ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, GRUB_ARCH_DL_GOT_ALIGN);
+  ptr = (char *) ALIGN_UP ((grub_addr_t) ptr, got_align);
   mod->got = ptr;
   mod->gotptr = ptr;
   ptr += got;
 #endif
 
+  grub_dprintf ("modules", "done loading segments for \"%s\"\n", mod->name);
   return GRUB_ERR_NONE;
 }
 
@@ -532,7 +560,7 @@ grub_dl_resolve_dependencies (grub_dl_t mod, Elf_Ehdr *e)
   return GRUB_ERR_NONE;
 }
 
-int
+grub_uint64_t
 grub_dl_ref (grub_dl_t mod)
 {
   grub_dl_dep_t dep;
@@ -543,10 +571,13 @@ grub_dl_ref (grub_dl_t mod)
   for (dep = mod->dep; dep; dep = dep->next)
     grub_dl_ref (dep->mod);
 
-  return ++mod->ref_count;
+  if (grub_add (mod->ref_count, 1, &mod->ref_count))
+    grub_fatal ("Module reference count overflow");
+
+  return mod->ref_count;
 }
 
-int
+grub_uint64_t
 grub_dl_unref (grub_dl_t mod)
 {
   grub_dl_dep_t dep;
@@ -557,10 +588,13 @@ grub_dl_unref (grub_dl_t mod)
   for (dep = mod->dep; dep; dep = dep->next)
     grub_dl_unref (dep->mod);
 
-  return --mod->ref_count;
+  if (grub_sub (mod->ref_count, 1, &mod->ref_count))
+    grub_fatal ("Module reference count underflow");
+
+  return mod->ref_count;
 }
 
-int
+grub_uint64_t
 grub_dl_ref_count (grub_dl_t mod)
 {
   if (mod == NULL)
@@ -584,6 +618,7 @@ grub_dl_relocate_symbols (grub_dl_t mod, void *ehdr)
   Elf_Shdr *s;
   unsigned i;
 
+  grub_dprintf ("modules", "relocating symbols for \"%s\"\n", mod->name);
   for (i = 0, s = (Elf_Shdr *) ((char *) e + e->e_shoff);
        i < e->e_shnum;
        i++, s = (Elf_Shdr *) ((char *) s + e->e_shentsize))
@@ -592,21 +627,104 @@ grub_dl_relocate_symbols (grub_dl_t mod, void *ehdr)
 	grub_dl_segment_t seg;
 	grub_err_t err;
 
-	/* Find the target segment.  */
-	for (seg = mod->segment; seg; seg = seg->next)
-	  if (seg->section == s->sh_info)
-	    break;
+  if (!(s->sh_flags & SHF_INFO_LINK))
+    continue;
 
-	if (seg)
-	  {
-	    if (!mod->symtab)
-	      return grub_error (GRUB_ERR_BAD_MODULE, "relocation without symbol table");
+	seg = grub_dl_find_segment(mod, s->sh_info);
+        if (!seg)
+	  continue;
 
-	    err = grub_arch_dl_relocate_symbols (mod, ehdr, s, seg);
-	    if (err)
-	      return err;
-	  }
+	if (!mod->symtab)
+	  return grub_error (GRUB_ERR_BAD_MODULE, "relocation without symbol table");
+
+	err = grub_arch_dl_relocate_symbols (mod, ehdr, s, seg);
+	if (err)
+	  return err;
       }
+
+  grub_dprintf ("modules", "done relocating symbols for \"%s\"\n", mod->name);
+  return GRUB_ERR_NONE;
+}
+
+static grub_err_t
+grub_dl_set_mem_attrs (grub_dl_t mod, void *ehdr)
+{
+  unsigned i;
+  const Elf_Shdr *s;
+  const Elf_Ehdr *e = ehdr;
+#if !defined (__i386__) && !defined (__x86_64__) && !defined(__riscv)
+  grub_size_t arch_addralign = grub_arch_dl_min_alignment ();
+  grub_addr_t tgaddr;
+  grub_size_t tgsz;
+#endif
+
+  grub_dprintf ("modules", "updating memory attributes for \"%s\"\n",
+		mod->name);
+  for (i = 0, s = (const Elf_Shdr *)((const char *) e + e->e_shoff);
+       i < e->e_shnum;
+       i++, s = (const Elf_Shdr *)((const char *) s + e->e_shentsize))
+    {
+      grub_dl_segment_t seg;
+      grub_uint64_t set_attrs = GRUB_MEM_ATTR_R;
+      grub_uint64_t clear_attrs = GRUB_MEM_ATTR_W|GRUB_MEM_ATTR_X;
+
+      seg = grub_dl_find_segment(mod, i);
+      if (!seg)
+	continue;
+
+      if (seg->size == 0 || !(s->sh_flags & SHF_ALLOC))
+	continue;
+
+      if (s->sh_flags & SHF_WRITE)
+	{
+	  set_attrs |= GRUB_MEM_ATTR_W;
+	  clear_attrs &= ~GRUB_MEM_ATTR_W;
+	}
+
+      if (s->sh_flags & SHF_EXECINSTR)
+	{
+	  set_attrs |= GRUB_MEM_ATTR_X;
+	  clear_attrs &= ~GRUB_MEM_ATTR_X;
+	}
+
+      grub_dprintf ("modules", "setting memory attrs for section \"%s\" to -%s%s%s+%s%s%s\n",
+		    grub_dl_get_section_name(e, s),
+		    (clear_attrs & GRUB_MEM_ATTR_R) ? "r" : "",
+		    (clear_attrs & GRUB_MEM_ATTR_W) ? "w" : "",
+		    (clear_attrs & GRUB_MEM_ATTR_X) ? "x" : "",
+		    (set_attrs & GRUB_MEM_ATTR_R) ? "r" : "",
+		    (set_attrs & GRUB_MEM_ATTR_W) ? "w" : "",
+		    (set_attrs & GRUB_MEM_ATTR_X) ? "x" : "");
+      grub_update_mem_attrs ((grub_addr_t)(seg->addr), seg->size, set_attrs, clear_attrs);
+    }
+
+#if !defined (__i386__) && !defined (__x86_64__) && !defined(__riscv)
+  tgaddr = grub_min((grub_addr_t)mod->tramp, (grub_addr_t)mod->got);
+  tgsz = grub_max((grub_addr_t)mod->trampptr, (grub_addr_t)mod->gotptr) - tgaddr;
+
+  if (tgsz)
+    {
+      tgsz = ALIGN_UP(tgsz, arch_addralign);
+
+      grub_dprintf ("modules",
+		    "updating attributes for GOT and trampolines (\"%s\")\n",
+		    mod->name);
+      if (tgaddr < (grub_addr_t)mod->base ||
+          tgsz > (grub_addr_t)-1 - tgaddr ||
+	  tgaddr + tgsz > (grub_addr_t)mod->base + mod->sz)
+	return grub_error (GRUB_ERR_BUG,
+			   "BUG: trying to protect pages outside of module "
+			   "allocation (\"%s\"): module base %p, size 0x%"
+			   PRIxGRUB_SIZE "; tramp/GOT base 0x%" PRIxGRUB_ADDR
+			   ", size 0x%" PRIxGRUB_SIZE,
+			   mod->name, mod->base, mod->sz, tgaddr, tgsz);
+      grub_update_mem_attrs (tgaddr, tgsz, GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_X,
+			     GRUB_MEM_ATTR_W);
+    }
+#endif
+
+  grub_dprintf ("modules", "done updating module memory attributes for \"%s\"\n",
+		mod->name);
 
   return GRUB_ERR_NONE;
 }
@@ -644,6 +762,7 @@ grub_dl_load_core_noinit (void *addr, grub_size_t size)
   mod->ref_count = 1;
 
   grub_dprintf ("modules", "relocating to %p\n", mod);
+
   /* Me, Vladimir Serbinenko, hereby I add this module check as per new
      GNU module policy. Note that this license check is informative only.
      Modules have to be licensed under GPLv3 or GPLv3+ (optionally
@@ -657,7 +776,8 @@ grub_dl_load_core_noinit (void *addr, grub_size_t size)
       || grub_dl_resolve_dependencies (mod, e)
       || grub_dl_load_segments (mod, e)
       || grub_dl_resolve_symbols (mod, e)
-      || grub_dl_relocate_symbols (mod, e))
+      || grub_dl_relocate_symbols (mod, e)
+      || grub_dl_set_mem_attrs (mod, e))
     {
       mod->fini = 0;
       grub_dl_unload (mod);

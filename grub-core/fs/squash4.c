@@ -460,11 +460,11 @@ grub_squash_read_symlink (grub_fshelp_node_t node)
 {
   char *ret;
   grub_err_t err;
-  grub_size_t sz;
+  grub_uint32_t sz;
 
   if (grub_add (grub_le_to_cpu32 (node->ino.symlink.namelen), 1, &sz))
     {
-      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("overflow is detected"));
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("symlink name length overflow"));
       return NULL;
     }
 
@@ -580,6 +580,7 @@ grub_squash_iterate_dir (grub_fshelp_node_t dir,
 	  struct grub_squash_dirent di;
 	  struct grub_squash_inode ino;
 	  grub_size_t sz;
+	  grub_uint16_t nlen;
 
 	  err = read_chunk (dir->data, &di, sizeof (di),
 			    grub_le_to_cpu64 (dir->data->sb.diroffset)
@@ -595,7 +596,12 @@ grub_squash_iterate_dir (grub_fshelp_node_t dir,
 	  if (err)
 	    return 0;
 
-	  buf = grub_malloc (grub_le_to_cpu16 (di.namelen) + 2);
+	  if (grub_add (grub_le_to_cpu16 (di.namelen), 2, &nlen))
+	    {
+	      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("name length overflow"));
+	      return 0;
+	    }
+	  buf = grub_malloc (nlen);
 	  if (!buf)
 	    return 0;
 	  err = read_chunk (dir->data, buf,
@@ -816,10 +822,10 @@ direct_read (struct grub_squash_data *data,
 	  break;
 	}
       total_blocks = ((total_size + data->blksz - 1) >> data->log2_blksz);
-      ino->block_sizes = grub_malloc (total_blocks
-				      * sizeof (ino->block_sizes[0]));
-      ino->cumulated_block_sizes = grub_malloc (total_blocks
-						* sizeof (ino->cumulated_block_sizes[0]));
+      ino->block_sizes = grub_calloc (total_blocks,
+				      sizeof (ino->block_sizes[0]));
+      ino->cumulated_block_sizes = grub_calloc (total_blocks,
+						sizeof (ino->cumulated_block_sizes[0]));
       if (!ino->block_sizes || !ino->cumulated_block_sizes)
 	{
 	  grub_free (ino->block_sizes);
@@ -1044,6 +1050,7 @@ static struct grub_fs grub_squash_fs =
 
 GRUB_MOD_INIT(squash4)
 {
+  grub_squash_fs.mod = mod;
   grub_fs_register (&grub_squash_fs);
 }
 

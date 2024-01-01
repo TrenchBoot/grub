@@ -26,10 +26,15 @@
 #include <grub/dl.h>
 #include <grub/file.h>
 #include <grub/i18n.h>
+#include <grub/env.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
-#define HTTP_PORT	((grub_uint16_t) 80)
+enum
+  {
+    HTTP_PORT = 80,
+    HTTP_MAX_CHUNK_SIZE = 0x80000000
+  };
 
 typedef struct http_data
 {
@@ -82,6 +87,8 @@ parse_line (grub_file_t file, http_data_t data, char *ptr, grub_size_t len)
   if (data->in_chunk_len == 2)
     {
       data->chunk_rem = grub_strtoul (ptr, 0, 16);
+      if (data->chunk_rem > HTTP_MAX_CHUNK_SIZE)
+	  return GRUB_ERR_NET_PACKET_TOO_BIG;
       grub_errno = GRUB_ERR_NONE;
       if (data->chunk_rem == 0)
 	{
@@ -496,13 +503,20 @@ http_open (struct grub_file *file, const char *filename)
 {
   grub_err_t err;
   struct http_data *data;
+  const char *http_path;
 
   data = grub_zalloc (sizeof (*data));
   if (!data)
     return grub_errno;
   file->size = GRUB_FILE_SIZE_UNKNOWN;
 
-  data->filename = grub_strdup (filename);
+  /* If path is relative, prepend http_path */
+  http_path = grub_env_get ("http_path");
+  if (http_path && filename[0] != '/')
+    data->filename = grub_xasprintf ("%s/%s", http_path, filename);
+  else
+    data->filename = grub_strdup (filename);
+
   if (!data->filename)
     {
       grub_free (data);

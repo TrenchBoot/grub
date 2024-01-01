@@ -24,6 +24,7 @@
 #include <grub/dl.h>
 #include <grub/i18n.h>
 #include <grub/archelp.h>
+#include <grub/safemath.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -48,6 +49,7 @@ grub_cpio_find_file (struct grub_archelp_data *data, char **name,
   struct head hd;
   grub_size_t namesize;
   grub_uint32_t modeval;
+  grub_size_t sz;
 
   data->hofs = data->next_hofs;
 
@@ -60,11 +62,21 @@ grub_cpio_find_file (struct grub_archelp_data *data, char **name,
 #endif
       )
     return grub_error (GRUB_ERR_BAD_FS, "invalid cpio archive");
-  data->size = read_number (hd.filesize, ARRAY_SIZE (hd.filesize));
+
+  if (grub_cast (read_number (hd.filesize, ARRAY_SIZE (hd.filesize)), &data->size))
+    return grub_error (GRUB_ERR_BAD_FS, N_("data size overflow"));
+
   if (mtime)
-    *mtime = read_number (hd.mtime, ARRAY_SIZE (hd.mtime));
-  modeval = read_number (hd.mode, ARRAY_SIZE (hd.mode));
-  namesize = read_number (hd.namesize, ARRAY_SIZE (hd.namesize));
+    {
+      if (grub_cast (read_number (hd.mtime, ARRAY_SIZE (hd.mtime)), mtime))
+	return grub_error (GRUB_ERR_BAD_FS, N_("mtime overflow"));
+    }
+
+  if (grub_cast (read_number (hd.mode, ARRAY_SIZE (hd.mode)), &modeval))
+    return grub_error (GRUB_ERR_BAD_FS, N_("mode overflow"));
+
+  if (grub_cast (read_number (hd.namesize, ARRAY_SIZE (hd.namesize)), &namesize))
+    return grub_error (GRUB_ERR_BAD_FS, N_("namesize overflow"));
 
   /* Don't allow negative numbers.  */
   if (namesize >= 0x80000000)
@@ -76,7 +88,10 @@ grub_cpio_find_file (struct grub_archelp_data *data, char **name,
 
   *mode = modeval;
 
-  *name = grub_malloc (namesize + 1);
+  if (grub_add (namesize, 1, &sz))
+    return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("file name size overflow"));
+
+  *name = grub_malloc (sz);
   if (*name == NULL)
     return grub_errno;
 
@@ -110,10 +125,17 @@ grub_cpio_get_link_target (struct grub_archelp_data *data)
 {
   char *ret;
   grub_err_t err;
+  grub_size_t sz;
 
   if (data->size == 0)
     return grub_strdup ("");
-  ret = grub_malloc (data->size + 1);
+
+  if (grub_add (data->size, 1, &sz))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("target data size overflow"));
+      return NULL;
+    }
+  ret = grub_malloc (sz);
   if (!ret)
     return NULL;
 

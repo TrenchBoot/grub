@@ -23,6 +23,7 @@
 #include <grub/env.h>
 #include <grub/i18n.h>
 #include <grub/lockdown.h>
+#include <grub/efi/sb.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -121,18 +122,24 @@ grub_cmd_write (grub_command_t cmd, int argc, char **argv)
 
 GRUB_MOD_INIT(memrw)
 {
+  if (grub_efi_get_secureboot () == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+    return;
+
   cmd_read_byte =
-    grub_register_extcmd ("read_byte", grub_cmd_read, 0,
-			  N_("ADDR"), N_("Read 8-bit value from ADDR."),
-			  options);
+    grub_register_extcmd_lockdown ("read_byte", grub_cmd_read, 0,
+                                   N_("ADDR"),
+                                   N_("Read 8-bit value from ADDR."),
+                                   options);
   cmd_read_word =
-    grub_register_extcmd ("read_word", grub_cmd_read, 0,
-			  N_("ADDR"), N_("Read 16-bit value from ADDR."),
-			  options);
+    grub_register_extcmd_lockdown ("read_word", grub_cmd_read, 0,
+                                   N_("ADDR"),
+                                   N_("Read 16-bit value from ADDR."),
+                                   options);
   cmd_read_dword =
-    grub_register_extcmd ("read_dword", grub_cmd_read, 0,
-			  N_("ADDR"), N_("Read 32-bit value from ADDR."),
-			  options);
+    grub_register_extcmd_lockdown ("read_dword", grub_cmd_read, 0,
+                                   N_("ADDR"),
+                                   N_("Read 32-bit value from ADDR."),
+                                   options);
   cmd_write_byte =
     grub_register_command_lockdown ("write_byte", grub_cmd_write,
                                     N_("ADDR VALUE [MASK]"),
@@ -149,6 +156,9 @@ GRUB_MOD_INIT(memrw)
 
 GRUB_MOD_FINI(memrw)
 {
+  if (grub_efi_get_secureboot () == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+    return;
+
   grub_unregister_extcmd (cmd_read_byte);
   grub_unregister_extcmd (cmd_read_word);
   grub_unregister_extcmd (cmd_read_dword);

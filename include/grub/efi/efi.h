@@ -36,6 +36,11 @@ struct linux_arch_kernel_header {
   struct grub_pe_image_header pe_image_header;
 };
 
+#define GRUB_EFI_GRUB_VARIABLE_GUID \
+  { 0x91376aff, 0xcba6, 0x42be, \
+    { 0x94, 0x9d, 0x06, 0xfd, 0xe8, 0x11, 0x28, 0xe8 } \
+  }
+
 /* Functions.  */
 void *EXPORT_FUNC(grub_efi_locate_protocol) (grub_guid_t *protocol,
 					     void *registration);
@@ -150,5 +155,7 @@ struct grub_net_card;
 
 grub_efi_handle_t
 grub_efinet_get_device_handle (struct grub_net_card *card);
+
+grub_err_t EXPORT_FUNC(grub_efi_status_to_err) (grub_efi_status_t status);
 
 #endif /* ! GRUB_EFI_EFI_HEADER */
