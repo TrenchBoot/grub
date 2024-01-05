@@ -1178,7 +1178,7 @@ add_multiboot2_slrt_policy_entries (void)
   for (i = 0, cur = modules; i < modcnt; i++, cur = cur->next)
     {
       grub_slaunch_add_slrt_policy_entry (17,
-                                          GRUB_SLR_ET_MULTIBOOT_MODULE,
+                                          GRUB_SLR_ET_MULTIBOOT2_MODULE,
                                           /*flags=*/0,
                                           cur->start,
                                           cur->size,
@@ -1208,7 +1208,7 @@ grub_multiboot2_prepare_slaunch_txt (grub_uint32_t mbi_target,
     }
 
   grub_slaunch_add_slrt_policy_entry (18,
-                                      GRUB_SLR_ET_MULTIBOOT_INFO,
+                                      GRUB_SLR_ET_MULTIBOOT2_INFO,
                                       /*flags=*/0,
                                       mbi_target,
                                       mbi_size,
