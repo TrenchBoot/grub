@@ -240,6 +240,7 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 
     if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
       {
+        slparams.boot_type = GRUB_SL_BOOT_TYPE_LINUX;
         slparams.relocator = relocator;
 
 	slparams.mle_ptab_mem = prot_mode_mem;
@@ -285,6 +286,21 @@ allocate_pages (grub_size_t prot_size, grub_size_t *align,
 	grub_dprintf ("linux", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
 		      (unsigned long) slparams.tpm_evt_log_base,
 		      (unsigned) slparams.tpm_evt_log_size);
+
+	if (grub_relocator_alloc_chunk_align (relocator, &ch, 0x1000000,
+					      0xffffffff - GRUB_MLE_AP_WAKE_BLOCK_SIZE,
+					      GRUB_MLE_AP_WAKE_BLOCK_SIZE, GRUB_PAGE_SIZE,
+					      GRUB_RELOCATOR_PREFERENCE_NONE, 1))
+	  goto fail;
+
+	slparams.ap_wake_block = get_physical_target_address (ch);
+	slparams.ap_wake_block_size = GRUB_MLE_AP_WAKE_BLOCK_SIZE;
+
+	grub_memset (get_virtual_current_address (ch), 0, slparams.ap_wake_block_size);
+
+	grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
+		      (unsigned long) slparams.ap_wake_block,
+		      (unsigned long) slparams.ap_wake_block_size);
       }
   }
 
@@ -581,7 +597,6 @@ grub_linux_boot (void)
   };
   grub_size_t mmap_size;
   grub_size_t cl_offset;
-  grub_size_t ap_wake_block_size = 0;
 
 #ifdef GRUB_MACHINE_IEEE1275
   {
@@ -714,9 +729,6 @@ grub_linux_boot (void)
 		(unsigned) ctx.real_size,
 		(unsigned) efi_mmap_size);
 
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
-    ap_wake_block_size = GRUB_MLE_AP_WAKE_BLOCK_SIZE;
-
   if (! ctx.real_mode_target)
     return grub_error (GRUB_ERR_OUT_OF_MEMORY, "cannot allocate real mode pages");
 
@@ -728,25 +740,12 @@ grub_linux_boot (void)
       return GRUB_ERR_OUT_OF_RANGE;
 
     err = grub_relocator_alloc_chunk_addr (relocator, &ch,
-					   ctx.real_mode_target, sz + ap_wake_block_size);
+					   ctx.real_mode_target, sz);
     if (err)
      return err;
     real_mode_mem = get_virtual_current_address (ch);
   }
   efi_mmap_buf = (grub_uint8_t *) real_mode_mem + ctx.real_size;
-
-  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
-    {
-      slparams.boot_type = GRUB_SL_BOOT_TYPE_LINUX;
-
-      slparams.ap_wake_block = ctx.real_mode_target + ctx.real_size + efi_mmap_size;
-      slparams.ap_wake_block_size = ap_wake_block_size;
-      grub_memset ((void *) ((grub_addr_t) real_mode_mem + ctx.real_size +
-					   efi_mmap_size), 0, ap_wake_block_size);
-      grub_dprintf ("linux", "ap_wake_block = %lx, ap_wake_block_size = %lx\n",
-		    (unsigned long) slparams.ap_wake_block,
-		    (unsigned long) ap_wake_block_size);
-    }
 
   grub_dprintf ("linux", "real_mode_mem = %p\n",
                 real_mode_mem);

@@ -72,7 +72,7 @@
 
 #define GRUB_TXT_MLE_MAX_SIZE			0x40000000
 
-#define GRUB_MLE_AP_WAKE_BLOCK_SIZE		(4 * GRUB_PAGE_SIZE)
+#define GRUB_MLE_AP_WAKE_BLOCK_SIZE		(20 * GRUB_PAGE_SIZE)
 
 struct grub_txt_acm_header
 {
