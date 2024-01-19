@@ -39,11 +39,18 @@ Step 4:
 
 Step 5:
 
+Switch to the type of Linux boot to do:
+
+./switch.sh -u # UEFI direct Linux boot
+./switch.sh -l # Legacy Linux boot
+
+Step 6:
+
 make
 
 The `make` step will produce grub-mkimage binary, which you can use to build EFI binary
 
-Step 6:
+Step 7:
 
 Make this file in the root dir of grub:
 
@@ -51,7 +58,7 @@ sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
 grub,2,Free Software Foundation,grub,2.02,https://www.gnu.org/software/grub/
 grub.rhel7,2,Red Hat Enterprise Linux 8,grub2,random,mail:secalert@redhat.com
 
-Step 7:
+Step 8:
 
 ./grub-mkimage -O x86_64-efi -o grubx64.efi -p /EFI/redhat -d grub-core all_video boot btrfs cat chain configfile echo efifwsetup efinet ext2 fat font gfxmenu gfxterm gzio halt hfsplus iso9660 jpeg loadenv loopback lvm mdraid09 mdraid1x minicmd normal part_apple part_msdos part_gpt password_pbkdf2 png reboot regexp search search_fs_uuid search_fs_file search_label serial sleep syslinuxcfg test tftp video xfs backtrace http linux usb usbserial_common usbserial_pl2303 usbserial_ftdi usbserial_usbdebug keylayouts at_keyboard multiboot2 --sbat ./sbat.csv
 
