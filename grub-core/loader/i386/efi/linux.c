@@ -40,8 +40,10 @@ static grub_dl_t my_mod;
 static grub_command_t cmd_linux, cmd_initrd;
 static grub_command_t cmd_linuxefi, cmd_initrdefi;
 
-#define GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE	(8 * GRUB_EFI_PAGE_SIZE)
-#define GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE		(4 * GRUB_EFI_PAGE_SIZE)
+#define GRUB_EFI_SLAUNCH_TPM_EVT_LOG_PAGES	8
+#define GRUB_EFI_MLE_AP_WAKE_BLOCK_PAGES	20
+#define GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE	(GRUB_EFI_SLAUNCH_TPM_EVT_LOG_PAGES * GRUB_EFI_PAGE_SIZE)
+#define GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE		(GRUB_EFI_MLE_AP_WAKE_BLOCK_PAGES * GRUB_EFI_PAGE_SIZE)
 static struct grub_slaunch_params slparams = {0};
 
 struct grub_linuxefi_context {
@@ -392,6 +394,8 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   struct grub_linuxefi_context *context = 0;
   grub_err_t err;
   grub_uint8_t *slmem = NULL;
+  grub_uint32_t slmem_pages =
+     1 + GRUB_EFI_SLAUNCH_TPM_EVT_LOG_PAGES + GRUB_EFI_MLE_AP_WAKE_BLOCK_PAGES;
   grub_uint32_t slmem_size =
      GRUB_EFI_PAGE_SIZE + GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE + GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE;
 
@@ -551,7 +555,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
       slparams.boot_params = params;
 
       slmem = grub_efi_allocate_pages_real (GRUB_EFI_MAX_ALLOCATION_ADDRESS,
-                                            slmem_size,
+                                            slmem_pages,
                                             GRUB_EFI_ALLOCATE_MAX_ADDRESS,
                                             GRUB_EFI_LOADER_DATA);
       if (!slmem)
@@ -560,6 +564,8 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
       grub_update_mem_attrs ((grub_addr_t)slmem, slmem_size,
 				 GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_W,
 				 GRUB_MEM_ATTR_X);
+
+      grub_memset (slmem, 0, slmem_size);
 
       slparams.slr_table_base = (grub_uint64_t)slmem;
       slparams.slr_table_size = GRUB_EFI_PAGE_SIZE;
@@ -630,7 +636,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
       if (!addr)
         goto fail;
 
-      grub_update_mem_attrs ((grub_addr_t)addr, slparams.mle_ptab_size/GRUB_EFI_PAGE_SIZE,
+      grub_update_mem_attrs ((grub_addr_t)addr, slparams.mle_ptab_size,
 				 GRUB_MEM_ATTR_R|GRUB_MEM_ATTR_W,
 				 GRUB_MEM_ATTR_X);
 
