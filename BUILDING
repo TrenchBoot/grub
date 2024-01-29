@@ -35,14 +35,14 @@ index b7c5e60e1..bd3621930 100644
 
 Step 4:
 
-./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info 'HOST_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fPIC -fPIE' HOST_CPPFLAGS=-I./ 'HOST_LDFLAGS=-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld' 'TARGET_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -fPIC -fPIE' TARGET_CPPFLAGS=-I./ 'TARGET_LDFLAGS=-Wl,-z,relro -static' --with-platform=efi --with-utils=host --target=x86_64-redhat-linux-gnu --with-grubdir=grub2 --program-transform-name=s,grub,grub2, --disable-grub-mount --with-debug-timestamps --enable-boot-time --disable-werror --enable-rpm-sort=no
-
-Step 5:
-
 Switch to the type of Linux boot to do:
 
 ./switch.sh -u # UEFI direct Linux boot
 ./switch.sh -l # Legacy Linux boot
+
+Step 5:
+
+./configure --build=x86_64-redhat-linux-gnu --host=x86_64-redhat-linux-gnu --program-prefix= --disable-dependency-tracking --prefix=/usr --exec-prefix=/usr --bindir=/usr/bin --sbindir=/usr/sbin --sysconfdir=/etc --datadir=/usr/share --includedir=/usr/include --libdir=/usr/lib --libexecdir=/usr/libexec --localstatedir=/var --sharedstatedir=/var/lib --mandir=/usr/share/man --infodir=/usr/share/info 'HOST_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fPIC -fPIE' HOST_CPPFLAGS=-I./ 'HOST_LDFLAGS=-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld' 'TARGET_CFLAGS=-fno-strict-aliasing -g -pipe -Wall -Werror=format-security -Wp,-D_GLIBCXX_ASSERTIONS -grecord-gcc-switches -m64 -mtune=generic -fstack-clash-protection -fcf-protection -fPIC -fPIE' TARGET_CPPFLAGS=-I./ 'TARGET_LDFLAGS=-Wl,-z,relro -static' --with-platform=efi --with-utils=host --target=x86_64-redhat-linux-gnu --with-grubdir=grub2 --program-transform-name=s,grub,grub2, --disable-grub-mount --with-debug-timestamps --enable-boot-time --disable-werror --enable-rpm-sort=no
 
 Step 6:
 
