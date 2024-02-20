@@ -205,6 +205,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 {
   grub_file_t file;
   grub_ssize_t size;
+  void *new_module = NULL;
 
   if (!argc)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
@@ -231,12 +232,12 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
       goto fail;
     }
 
-  slaunch_module = grub_malloc (size);
+  new_module = grub_malloc (size);
 
-  if (slaunch_module == NULL)
+  if (new_module == NULL)
     goto fail;
 
-  if (grub_file_read (file, slaunch_module, size) != size)
+  if (grub_file_read (file, new_module, size) != size)
     {
       if (grub_errno == GRUB_ERR_NONE)
 	grub_error (GRUB_ERR_FILE_READ_ERROR, N_("premature end of file: %s"),
@@ -246,13 +247,13 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 
   if (slp == SLP_INTEL_TXT)
     {
-      if (!grub_txt_is_sinit_acmod (slaunch_module, size))
+      if (!grub_txt_is_sinit_acmod (new_module, size))
 	{
 	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("it does not look like SINIT ACM"));
 	  goto fail;
 	}
 
-      if (!grub_txt_acmod_match_platform (slaunch_module))
+      if (!grub_txt_acmod_match_platform (new_module))
 	{
 	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("SINIT ACM does not match platform"));
 	  goto fail;
@@ -260,7 +261,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
     }
   else if (slp == SLP_AMD_SKINIT)
     {
-      if (!grub_skinit_is_slb (slaunch_module, size))
+      if (!grub_skinit_is_slb (new_module, size))
         {
           grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("it does not look like SLB"));
           goto fail;
@@ -269,15 +270,16 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 
   grub_file_close (file);
 
+  grub_free (slaunch_module);
+  slaunch_module = new_module;
+
   return GRUB_ERR_NONE;
 
 fail:
   grub_error_push ();
 
-  grub_free (slaunch_module);
+  grub_free (new_module);
   grub_file_close (file);
-
-  slaunch_module = NULL;
 
   grub_error_pop ();
 
