@@ -1817,6 +1817,15 @@ module = {
 };
 
 module = {
+  name = slaunch;
+  x86 = loader/i386/slaunch.c;
+  x86 = loader/i386/txt/txt.c;
+  x86 = loader/i386/txt/acmod.c;
+  x86 = loader/i386/txt/verify.c;
+  enable = x86;
+};
+
+module = {
   name = fdt;
   efi = loader/efi/fdt.c;
   common = lib/fdt.c;
@@ -2491,7 +2500,13 @@ module = {
 
 module = {
   name = tpm;
-  common = commands/tpm.c;
+  x86 = commands/i386/tpm.c;
+  enable = x86;
+};
+
+module = {
+  name = tpm_verifier;
+  common = commands/tpm_verifier.c;
   efi = commands/efi/tpm.c;
   enable = efi;
 };
