@@ -1042,7 +1042,6 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   grub_err_t err;
   grub_uint8_t *txt_heap;
   struct grub_txt_os_mle_data *os_mle_data;
-  struct grub_txt_mle_header *mle_header;
   struct grub_txt_acm_header *sinit_base;
 
   sinit_base = grub_txt_sinit_select (grub_slaunch_module ());
@@ -1057,12 +1056,6 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
     return err;
 
   grub_dprintf ("slaunch", "TXT heap successfully prepared\n");
-
-  /* Update the MLE header. */
-  mle_header =
-      (struct grub_txt_mle_header *) ((grub_uint8_t *) slparams->mle_mem + slparams->mle_header_offset);
-  mle_header->first_valid_page = 0;
-  mle_header->mle_end = slparams->mle_size;
 
   slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
   slparams->dce_size = sinit_base->size * 4;
