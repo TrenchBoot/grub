@@ -25,11 +25,14 @@
 #include <grub/loader.h>
 #include <grub/mm.h>
 #include <grub/types.h>
+#include <grub/slr_table.h>
+#include <grub/slaunch.h>
 #include <grub/efi/efi.h>
 #include <grub/efi/fdtload.h>
 #include <grub/efi/memory.h>
 #include <grub/efi/pe32.h>
 #include <grub/efi/sb.h>
+#include <grub/x86_64/efi/memory.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
 #include <grub/verify.h>
@@ -54,6 +57,8 @@ static bool initrd_use_loadfile2 = false;
 
 static grub_guid_t load_file2_guid = GRUB_EFI_LOAD_FILE2_PROTOCOL_GUID;
 static grub_guid_t device_path_guid = GRUB_EFI_DEVICE_PATH_GUID;
+
+static struct grub_slaunch_params slparams = {0};
 
 static initrd_media_device_path_t initrd_lf2_device_path = {
   {
@@ -190,6 +195,7 @@ grub_arch_efi_linux_boot_image (grub_addr_t addr, grub_size_t size, char *args)
   grub_efi_boot_services_t *b;
   grub_efi_status_t status;
   grub_efi_loaded_image_t *loaded_image;
+  grub_err_t err;
   int len;
 
   mempath = grub_malloc (2 * sizeof (grub_efi_memory_mapped_device_path_t));
@@ -233,6 +239,16 @@ grub_arch_efi_linux_boot_image (grub_addr_t addr, grub_size_t size, char *args)
   loaded_image->load_options_size =
     2 * grub_utf8_to_utf16 (loaded_image->load_options, len,
 			    (grub_uint8_t *) args, len, NULL);
+
+  if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+    {
+      err = grub_sl_efi_txt_setup (&slparams, kernel_addr, loaded_image);
+      if (err != GRUB_ERR_NONE)
+        {
+          grub_error (err, "Secure Launch setup TXT failed");
+          goto unload;
+        }
+    }
 
   grub_dprintf ("linux", "starting image %p\n", image_handle);
   status = b->start_image (image_handle, 0, NULL);

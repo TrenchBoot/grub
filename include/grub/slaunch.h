@@ -36,9 +36,12 @@
 #define GRUB_KERNEL_INFO_HEADER		"LToP"
 #define GRUB_KERNEL_INFO_MIN_SIZE_TOTAL	12
 
+/* Forward declarations */
 struct linux_kernel_params;
 struct linux_i386_kernel_header;
 struct grub_relocator;
+struct grub_efi_loaded_image;
+typedef struct grub_efi_loaded_image grub_efi_loaded_image_t;
 
 struct grub_slaunch_params
 {
@@ -103,6 +106,10 @@ grub_err_t grub_sl_txt_setup_linux (struct grub_slaunch_params *slparams,
                                     struct grub_relocator *relocator,
                                     grub_size_t total_size, grub_size_t prot_size,
                                     void **prot_mode_mem, grub_addr_t *prot_mode_target);
+
+/* Linux EFI functions */
+grub_err_t grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
+                                  grub_efi_loaded_image_t *loaded_image);
 
 #endif /* ASM_FILE */
 
