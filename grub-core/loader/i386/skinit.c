@@ -106,10 +106,10 @@ grub_skinit_boot_prepare (struct grub_relocator *rel,
   if (slb == NULL)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, "SLB module is missing");
 
-  err = grub_relocator_alloc_chunk_align (rel, &ch, 0x1000000,
-                                          0xffffffff - GRUB_SLAUNCH_TPM_EVT_LOG_SIZE,
-                                          GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
-                                          GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+  err = grub_relocator_alloc_chunk_align_safe (rel, &ch, 0x1000000,
+                                               UP_TO_TOP32(GRUB_SLAUNCH_TPM_EVT_LOG_SIZE),
+                                               GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+                                               GRUB_RELOCATOR_PREFERENCE_HIGH, 1);
 
   if (err != GRUB_ERR_NONE)
     return grub_error (err, "cannot alloc memory for TPM event log");
