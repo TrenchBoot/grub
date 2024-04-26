@@ -11,7 +11,7 @@ jobs:
   qubes-dom0-package:
     uses: TrenchBoot/.github/.github/workflows/qubes-dom0-package.yml@master
     with:
-      base-commit: 'ae94b97be2b81b625d6af6654d3ed79078b50ff6'
-      patch-start: 1100
+      base-commit: '594fe4760a33158e7cd500825ee26a0c9aef5f6b'
+      patch-start: 1120
       qubes-component: 'grub2'
-      spec-pattern: '/^Patch1001:/'
+      spec-pattern: '/^Patch1119:/'
