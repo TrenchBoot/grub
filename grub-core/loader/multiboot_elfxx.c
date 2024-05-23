@@ -63,8 +63,8 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
   int i;
   void *source = NULL;
   struct grub_slaunch_params *slparams = grub_slaunch_params();
-  grub_size_t total_size;
   grub_uint32_t mle_hdr_offset;
+  struct grub_txt_mle_header *mle_hdr;
 
   if (ehdr->e_ident[EI_MAG0] != ELFMAG0
       || ehdr->e_ident[EI_MAG1] != ELFMAG1
@@ -106,11 +106,6 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
     {
       load_size = highest_load - mld->link_base_addr;
 
-      grub_dprintf ("multiboot_loader", "align=0x%lx, preference=0x%x, "
-		    "load_size=0x%x, avoid_efi_boot_services=%d\n",
-		    (long) mld->align, mld->preference, load_size,
-		    mld->avoid_efi_boot_services);
-
       if (grub_slaunch_platform_type () != SLP_NONE)
 	{
 #ifndef GRUB_USE_MULTIBOOT2
@@ -118,13 +113,9 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 #else
 	  /*
 	   * We allocate the the binary together with page tables to make one
-	   * contiguous block for MLE. We have to align up to PMR (2MB).
+	   * contiguous block for MLE.
 	   */
-	  total_size = ALIGN_UP(load_size, GRUB_TXT_PMR_ALIGN);
-
-	  slparams->mle_size = total_size;
-
-	  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (total_size);
+	  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (load_size);
 	  slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
 
 	  /* Do not go below GRUB_TXT_PMR_ALIGN. */
@@ -134,16 +125,20 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	}
       else
 	{
-	  total_size = load_size;
 	  slparams->mle_ptab_size = 0;
 	}
 
-      if (total_size > mld->max_addr || mld->min_addr > mld->max_addr - total_size)
+      grub_dprintf ("multiboot_loader", "align=0x%lx, preference=0x%x, "
+		    "load_size=0x%x, avoid_efi_boot_services=%d\n",
+		    (long) mld->align, mld->preference, load_size,
+		    mld->avoid_efi_boot_services);
+
+      if (load_size > mld->max_addr || mld->min_addr > mld->max_addr - load_size)
 	return grub_error (GRUB_ERR_BAD_OS, "invalid min/max address and/or load size");
 
       err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
-						   mld->min_addr, mld->max_addr - total_size,
-						   total_size, mld->align ? mld->align : 1,
+						   mld->min_addr, mld->max_addr,
+						   load_size, mld->align ? mld->align : 1,
 						   mld->preference, mld->avoid_efi_boot_services);
 
       if (err)
@@ -154,7 +149,7 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 
       mld->load_base_addr = get_physical_target_address (ch);
       source = get_virtual_current_address (ch);
-      grub_memset (get_virtual_current_address (ch), 0, total_size);
+      grub_memset (get_virtual_current_address (ch), 0, load_size);
       grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
 		    (long) mld->load_base_addr, (long) source);
 
@@ -254,7 +249,8 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
       /* TODO: decide on universal way of conveying location of MLE header */
       for (mle_hdr_offset = 0;  mle_hdr_offset < 0x1000; mle_hdr_offset += 16)
 	{
-	  if ( !grub_memcmp ((void *)((grub_addr_t) source + mle_hdr_offset), GRUB_TXT_MLE_UUID, 16) )
+	  mle_hdr = (struct grub_txt_mle_header *)((grub_addr_t)source + mle_hdr_offset);
+	  if ( !grub_memcmp ((void *)mle_hdr->uuid, GRUB_TXT_MLE_UUID, 16) )
 	    {
 	      slparams->mle_header_offset = mle_hdr_offset;
 	      break;
@@ -266,6 +262,8 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 
       grub_dprintf ("slaunch", "slparams->mle_header_offset: 0x%08x\n",
 			slparams->mle_header_offset);
+
+      slparams->mle_size = mle_hdr->mle_end - mle_hdr->mle_start;
     }
 
   for (i = 0; i < ehdr->e_phnum; i++)
