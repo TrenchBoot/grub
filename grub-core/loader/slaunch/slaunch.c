@@ -56,6 +56,12 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
   grub_uint32_t eax;
   grub_err_t err;
 
+  if (argc == 1)
+    {
+      if (grub_strcmp (argv[0], "--legacy-linux") == 0)
+	grub_env_set("slaunch-legacy-linux", "use-legacy-linux");
+    }
+
   if (!grub_cpu_is_cpuid_supported ())
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("CPUID is unsupported"));
 
@@ -175,7 +181,8 @@ static grub_command_t cmd_slaunch, cmd_slaunch_module, cmd_slaunch_state;
 GRUB_MOD_INIT (slaunch)
 {
   cmd_slaunch = grub_register_command ("slaunch", grub_cmd_slaunch,
-				       NULL, N_("Enable secure launcher"));
+				       N_("[--legacy-linux]"),
+				       N_("Enable secure launcher"));
   cmd_slaunch_module = grub_register_command ("slaunch_module", grub_cmd_slaunch_module,
 					      NULL, N_("Secure launcher module command"));
   cmd_slaunch_state = grub_register_command ("slaunch_state", grub_cmd_slaunch_state,

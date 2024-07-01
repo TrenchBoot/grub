@@ -18,6 +18,7 @@
 
 #include <grub/charset.h>
 #include <grub/command.h>
+#include <grub/env.h>
 #include <grub/err.h>
 #include <grub/file.h>
 #include <grub/fdt.h>
@@ -132,6 +133,9 @@ grub_arch_efi_linux_load_image_header (grub_file_t file,
   if (lh->pe_image_header.optional_header.major_image_version >= 1)
     initrd_use_loadfile2 = true;
   else
+    initrd_use_loadfile2 = false;
+
+  if (grub_env_get ("slaunch-legacy-linux"))
     initrd_use_loadfile2 = false;
 
   grub_dprintf ("linux", "LoadFile2 initrd loading %sabled\n",
