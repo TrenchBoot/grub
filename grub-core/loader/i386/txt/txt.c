@@ -350,6 +350,21 @@ fls (int mask)
   return (mask == 0 ? mask : (int)bsrl ((grub_uint32_t)mask) + 1);
 }
 
+static grub_uint32_t cpu_phys_addr(void)
+{
+    grub_uint32_t eax, ebx, ecx, edx;
+    grub_uint32_t phys_bits = 36;
+    /* Find the physical address size for this CPU. */
+    grub_cpuid (0x80000000, eax, ebx, ecx, edx);
+    if ( eax >= 0x80000008 )
+    {
+        grub_cpuid (0x80000008, eax, ebx, ecx, edx);
+        phys_bits = eax & 0xFF;
+    }
+
+    return phys_bits;
+}
+
 /*
  * set the memory type for specified range (base to base+size)
  * to mem_type and everything else to UC
@@ -360,9 +375,10 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
 {
   grub_uint64_t mtrr_def_type;
   grub_uint64_t mtrr_cap;
+  grub_uint64_t mtrr_mask;
   union mtrr_physbase_t mtrr_physbase;
   union mtrr_physmask_t mtrr_physmask;
-  grub_uint32_t vcnt, pages_in_range;
+  grub_uint32_t vcnt, pages_in_range, sinit_caps;
   unsigned long ndx, base_v;
   int i = 0, j, num_pages, mtrr_s;
 
@@ -375,6 +391,16 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
   /* Initially disable all variable MTRRs (we'll enable the ones we use) */
   mtrr_cap = grub_rdmsr (GRUB_MSR_X86_MTRRCAP);
   vcnt = (mtrr_cap & GRUB_MSR_X86_VCNT_MASK);
+
+  sinit_caps = grub_txt_get_sinit_capabilities ((struct grub_txt_acm_header *)base);
+  if (!(sinit_caps & GRUB_TXT_CAPS_MAXPHYSADDR_SUPPORT)) {
+    /* Legacy 36bit mask */
+    mtrr_mask = SINIT_MTRR_MASK;
+  } else {
+    /* Calculate the MTRR mask because MAXPHYADDR is used per SINIT caps */
+    mtrr_mask = ((1ull << cpu_phys_addr()) - 1) & ~((1ull << 12) - 1);
+    mtrr_mask = mtrr_mask >> GRUB_PAGE_SHIFT;
+  }
 
   for ( ndx = 0; ndx < vcnt; ndx++ )
     {
@@ -411,13 +437,12 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
   while ( num_pages >= mtrr_s )
     {
       mtrr_physbase.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSBASE (ndx));
-      mtrr_physbase.base = ((unsigned long)base >> GRUB_PAGE_SHIFT) &
-	                     SINIT_MTRR_MASK;
+      mtrr_physbase.base = ((unsigned long)base >> GRUB_PAGE_SHIFT) & mtrr_mask;
       mtrr_physbase.type = mem_type;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSBASE (ndx), mtrr_physbase.raw);
 
       mtrr_physmask.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK (ndx));
-      mtrr_physmask.mask = ~(mtrr_s - 1) & SINIT_MTRR_MASK;
+      mtrr_physmask.mask = ~(mtrr_s - 1) & mtrr_mask;
       mtrr_physmask.v = 1;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSMASK (ndx), mtrr_physmask.raw);
 
@@ -433,8 +458,7 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
     {
       /* Set the base of the current MTRR */
       mtrr_physbase.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSBASE (ndx));
-      mtrr_physbase.base = ((unsigned long)base >> GRUB_PAGE_SHIFT) &
-                            SINIT_MTRR_MASK;
+      mtrr_physbase.base = ((unsigned long)base >> GRUB_PAGE_SHIFT) & mtrr_mask;
       mtrr_physbase.type = mem_type;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSBASE (ndx), mtrr_physbase.raw);
 
@@ -446,7 +470,7 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
       pages_in_range = 1 << (fls (num_pages) - 1);
 
       mtrr_physmask.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK (ndx));
-      mtrr_physmask.mask = ~(pages_in_range - 1) & SINIT_MTRR_MASK;
+      mtrr_physmask.mask = ~(pages_in_range - 1) & mtrr_mask;
       mtrr_physmask.v = 1;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSMASK (ndx), mtrr_physmask.raw);
 
@@ -758,6 +782,10 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
 	  os_sinit_data->capabilities = 0;
 	}
     }
+
+  /* Use MAXPHYADDR for MTRR masks if available */
+  if (sinit_caps & GRUB_TXT_CAPS_MAXPHYSADDR_SUPPORT)
+    os_sinit_data->capabilities |= GRUB_TXT_CAPS_MAXPHYSADDR_SUPPORT;
 
   /*
    * APs (application processors) can't be brought up by usual INIT-SIPI-SIPI
