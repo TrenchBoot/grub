@@ -764,6 +764,15 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
    */
   os_sinit_data->capabilities = GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE;
 
+  /* CBnT must set bits 4 and 5 */
+  if (sinit_caps & GRUB_TXT_CAPS_CBNT_SUPPORT)
+    {
+      os_sinit_data->capabilities |= GRUB_TXT_CAPS_CBNT_SUPPORT;
+
+      if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+        os_sinit_data->capabilities |= GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE;
+    }
+
   if (grub_get_tpm_ver () == GRUB_TPM_20)
     {
       if ((sinit_caps & os_sinit_data->capabilities) != os_sinit_data->capabilities)
@@ -773,14 +782,14 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   else
     {
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_12_AUTH_PCR_USAGE))
-	{
-	  grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
-	  if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
-	    return grub_error (GRUB_ERR_BAD_ARGUMENT,
-		N_("Not a single PCR usage available in SINIT capabilities"));
+        {
+          grub_dprintf ("slaunch", "Details/authorities PCR usage is not supported. Trying legacy");
+          if (sinit_caps & GRUB_TXT_CAPS_TPM_12_NO_LEGACY_PCR_USAGE)
+            return grub_error (GRUB_ERR_BAD_ARGUMENT,
+        	N_("Not a single PCR usage available in SINIT capabilities"));
 
-	  os_sinit_data->capabilities = 0;
-	}
+          os_sinit_data->capabilities = 0;
+        }
     }
 
   /* Use MAXPHYADDR for MTRR masks if available */
