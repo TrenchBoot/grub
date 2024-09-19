@@ -19,6 +19,17 @@
 #ifndef GRUB_CPU_CPUID_HEADER
 #define GRUB_CPU_CPUID_HEADER 1
 
+/* General */
+#define GRUB_X86_CPUID_VENDOR           0x00000000
+#define GRUB_X86_CPUID_FEATURES         0x00000001
+/* Intel */
+#define GRUB_X86_CPUID_FEATURES_ECX_VMX (1<<5)
+#define GRUB_X86_CPUID_FEATURES_ECX_SMX (1<<6)
+/* AMD */
+#define GRUB_AMD_CPUID_FEATURES         0x80000001
+#define GRUB_AMD_CPUID_FEATURES_ECX_SVM (1<<2)
+#define GRUB_AMD_CPUID_FUNC             0x8000000a
+
 extern unsigned char grub_cpuid_has_longmode;
 extern unsigned char grub_cpuid_has_pae;
 
