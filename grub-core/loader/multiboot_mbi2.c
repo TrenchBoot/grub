@@ -36,6 +36,11 @@
 #include <grub/i18n.h>
 #include <grub/net.h>
 #include <grub/lib/cmdline.h>
+#include <grub/i386/memory.h>
+#include <grub/i386/skinit.h>
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
+#include <grub/slr_table.h>
 
 #if defined (GRUB_MACHINE_EFI)
 #include <grub/efi/efi.h>
@@ -277,6 +282,9 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 
   if (addr_tag)
     {
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        return grub_error (GRUB_ERR_BAD_OS, "Slaunch not supported with multiboot addr tag");
+
       grub_uint64_t load_addr = (addr_tag->load_addr + 1)
 	? addr_tag->load_addr : (addr_tag->header_addr
 				 - ((char *) header - (char *) mld.buffer));
@@ -390,6 +398,36 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
     err = grub_multiboot2_set_console (GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT,
 				       accepted_consoles,
 				       0, 0, 0, console_required);
+
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      grub_relocator_chunk_t ch;
+      struct grub_slaunch_params *slparams = grub_slaunch_params();
+
+      if (grub_relocator_alloc_chunk_align_safe (grub_multiboot2_relocator, &ch, 0x1000000,
+                                                 UP_TO_TOP32 (GRUB_SLAUNCH_TPM_EVT_LOG_SIZE),
+                                                 GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+                                                 GRUB_RELOCATOR_PREFERENCE_HIGH, 1))
+        {
+          grub_free (mld.buffer);
+          return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate TPM event log area");
+        }
+
+      slparams->tpm_evt_log_base = get_physical_target_address (ch);
+      slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+      /* It's OK to call this for AMD SKINIT because SKL erases the log before use. */
+      grub_txt_init_tpm_event_log(get_virtual_current_address (ch),
+                                  slparams->tpm_evt_log_size);
+
+      grub_dprintf ("multiboot_loader", "tpm_evt_log_base = %lx, tpm_evt_log_size = %x\n",
+                    (unsigned long) slparams->tpm_evt_log_base,
+                    (unsigned) slparams->tpm_evt_log_size);
+
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+        grub_txt_setup_mle_ptab (slparams);
+    }
+
   return err;
 }
 
@@ -701,7 +739,7 @@ retrieve_video_parameters (grub_properly_aligned_t **ptrorig)
 }
 
 grub_err_t
-grub_multiboot2_make_mbi (grub_uint32_t *target)
+grub_multiboot2_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
 {
   grub_properly_aligned_t *ptrorig;
   grub_properly_aligned_t *mbistart;
@@ -1002,7 +1040,9 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
       / sizeof (grub_properly_aligned_t);
   }
 
-  ((grub_uint32_t *) mbistart)[0] = (char *) ptrorig - (char *) mbistart;
+  *size = (char *) ptrorig - (char *) mbistart;
+
+  ((grub_uint32_t *) mbistart)[0] = *size;
   ((grub_uint32_t *) mbistart)[1] = 0;
 
   return GRUB_ERR_NONE;
@@ -1125,4 +1165,78 @@ grub_multiboot2_set_bootdev (void)
     grub_device_close (dev);
 
   bootdev_set = 1;
+}
+
+static void
+add_multiboot2_slrt_policy_entries (void)
+{
+  unsigned i;
+  struct module *cur;
+
+  for (i = 0, cur = modules; i < modcnt; i++, cur = cur->next)
+    {
+      grub_slaunch_add_slrt_policy_entry (17,
+                                          GRUB_SLR_ET_MULTIBOOT2_MODULE,
+                                          /*flags=*/0,
+                                          cur->start,
+                                          cur->size,
+                                          "Measured MB2 module");
+    }
+}
+
+grub_err_t
+grub_multiboot2_prepare_slaunch (grub_uint32_t mbi_target,
+                                 grub_uint32_t mbi_size)
+{
+  grub_err_t err;
+  struct grub_slaunch_params *slparams = grub_slaunch_params ();
+  grub_uint32_t slp = grub_slaunch_platform_type ();
+
+  slparams->boot_params_addr = mbi_target;
+
+  if (slp == SLP_INTEL_TXT)
+    {
+      slparams->slr_table_base = GRUB_SLAUNCH_STORE_IN_OS2MLE;
+      slparams->slr_table_size = GRUB_PAGE_SIZE;
+
+      slparams->slr_table_mem = grub_zalloc (slparams->slr_table_size);
+      if (slparams->slr_table_mem == NULL)
+          return GRUB_ERR_OUT_OF_MEMORY;
+
+      err = grub_txt_boot_prepare (slparams);
+      if (err != GRUB_ERR_NONE)
+          return grub_error (err, "TXT boot preparation failed");
+    }
+  else if (slp == SLP_AMD_SKINIT)
+    {
+      err = grub_skinit_boot_prepare (grub_multiboot2_relocator, slparams);
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "SKINIT preparations have failed");
+    }
+  else
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+                       N_("Unknown secure launcher platform type: %d\n"), slp);
+
+  grub_slaunch_add_slrt_policy_entry (18,
+                                      GRUB_SLR_ET_MULTIBOOT2_INFO,
+                                      /*flags=*/0,
+                                      mbi_target,
+                                      mbi_size,
+                                      "Measured MB2 information");
+  grub_slaunch_add_slrt_policy_entries ();
+  if (slp == SLP_INTEL_TXT)
+    grub_txt_add_slrt_policy_entries ();
+  add_multiboot2_slrt_policy_entries ();
+  grub_slaunch_finish_slr_table ();
+
+  grub_dprintf ("multiboot_loader", "slr_table_base = %lx, slr_table_size = %x\n",
+                (unsigned long) slparams->slr_table_base,
+                (unsigned) slparams->slr_table_size);
+
+  if (slp == SLP_INTEL_TXT)
+    grub_memcpy ((void *)(grub_addr_t) slparams->slr_table_base,
+                 slparams->slr_table_mem,
+                 slparams->slr_table_size);
+
+  return GRUB_ERR_NONE;
 }

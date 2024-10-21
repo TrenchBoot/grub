@@ -20,7 +20,9 @@
 #ifndef GRUB_MEMORY_CPU_HEADER
 #define GRUB_MEMORY_CPU_HEADER	1
 
-#define PAGE_SHIFT		12
+#define GRUB_PAGE_SHIFT		12
+#define GRUB_PAGE_SIZE		(1UL << GRUB_PAGE_SHIFT)
+#define GRUB_PAGE_MASK		(~(GRUB_PAGE_SIZE - 1))
 
 /* The flag for protected mode.  */
 #define GRUB_MEMORY_CPU_CR0_PE_ON		0x1
@@ -42,7 +44,11 @@
 
 #define GRUB_MMAP_MALLOC_LOW 1
 
+#include <grub/misc.h>
 #include <grub/types.h>
+
+#define GRUB_PAGE_UP(p)		ALIGN_UP (p, GRUB_PAGE_SIZE)
+#define GRUB_PAGE_DOWN(p)	ALIGN_DOWN (p, GRUB_PAGE_SIZE)
 
 struct grub_e820_mmap_entry
 {
