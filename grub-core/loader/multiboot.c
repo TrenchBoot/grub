@@ -50,6 +50,11 @@
 #include <grub/video.h>
 #include <grub/memory.h>
 #include <grub/i18n.h>
+#if defined (__i386__) || defined (__x86_64__)
+#include <grub/i386/skinit.h>
+#include <grub/i386/slaunch.h>
+#include <grub/i386/txt.h>
+#endif
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -161,6 +166,22 @@ efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
 static void
 normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
 {
+  struct grub_slaunch_params *slparams = grub_slaunch_params();
+  state.edi = grub_slaunch_platform_type ();
+
+  if (state.edi == SLP_INTEL_TXT)
+    {
+      /* Configure relocator GETSEC[SENTER] call. */
+      state.eax = GRUB_SMX_LEAF_SENTER;
+      state.ebx = slparams->dce_base;
+      state.ecx = slparams->dce_size;
+      state.edx = 0;
+    }
+  else if (state.edi == SLP_AMD_SKINIT)
+    {
+      state.eax = slparams->dce_base;
+    }
+
   grub_relocator32_boot (rel, state, 0);
 }
 #else
@@ -175,6 +196,7 @@ static grub_err_t
 grub_multiboot_boot (void)
 {
   grub_err_t err;
+  grub_uint32_t mbi_size;
 
 #ifdef GRUB_USE_MULTIBOOT2
   struct grub_relocator32_state state = MULTIBOOT2_INITIAL_STATE;
@@ -183,10 +205,20 @@ grub_multiboot_boot (void)
 #endif
   state.MULTIBOOT_ENTRY_REGISTER = GRUB_MULTIBOOT (payload_eip);
 
-  err = GRUB_MULTIBOOT (make_mbi) (&state.MULTIBOOT_MBI_REGISTER);
+  err = GRUB_MULTIBOOT (make_mbi) (&state.MULTIBOOT_MBI_REGISTER, &mbi_size);
 
   if (err)
     return err;
+
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      err = grub_multiboot2_prepare_slaunch (state.MULTIBOOT_MBI_REGISTER,
+                                             mbi_size);
+      if (err)
+        return err;
+    }
+#endif
 
   if (grub_efi_is_finished)
     normal_boot (GRUB_MULTIBOOT (relocator), state);

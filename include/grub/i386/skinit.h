@@ -1,6 +1,6 @@
 /*
  *  GRUB  --  GRand Unified Bootloader
- *  Copyright (C) 2019  Free Software Foundation, Inc.
+ *  Copyright (C) 2020  Oracle and/or its affiliates.
  *
  *  GRUB is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,24 +14,23 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Main secure launch definitions header file.
  */
 
-#ifndef GRUB_RDMSR_H
-#define GRUB_RDMSR_H 1
+#ifndef GRUB_I386_SKINIT_H
+#define GRUB_I386_SKINIT_H 1
 
-/*
- * TODO: Add a general protection exception handler.
- *       Accessing a reserved or unimplemented MSR address results in a GP#.
- */
+/* SLB is 64k, 64k-aligned. */
+#define GRUB_SKINIT_SLB_SIZE   0x10000
+#define GRUB_SKINIT_SLB_ALIGN  0x10000
 
-static inline grub_uint64_t
-grub_msr_read (grub_uint32_t msr_id)
-{
-  grub_uint32_t low, high;
+#include <grub/cpu/relocator.h>
+#include <grub/i386/slaunch.h>
 
-  asm volatile ("rdmsr" : "=a" (low), "=d" (high) : "c" (msr_id));
+int grub_skinit_is_slb (const void *slb_base, grub_uint32_t slb_size);
 
-  return ((grub_uint64_t)high << 32) | low;
-}
+grub_err_t grub_skinit_boot_prepare (struct grub_relocator *rel,
+                                     struct grub_slaunch_params *slparams);
 
-#endif /* GRUB_RDMSR_H */
+#endif /* GRUB_I386_SKINIT_H */
