@@ -171,6 +171,7 @@ grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
    * header is in the startup section before the protected mode piece begins.
    * In legacy world this part of the image would have been stripped off.
    */
+  slparams->mle_mem = image_base + start;
   slparams->mle_start = image_base + start;
   slparams->mle_size = image_size - start;
 
@@ -233,6 +234,7 @@ grub_sl_efi_skinit_setup (struct grub_slaunch_params *slparams, void *kernel_add
   start = (lh->setup_sects + 1) * 512;
 
   /* See comment in TXT setup function grub_efi_slaunch_setup_txt() */
+  slparams->mle_mem = image_base + start;
   slparams->mle_start = image_base + start;
   slparams->mle_size = image_size - start;
 

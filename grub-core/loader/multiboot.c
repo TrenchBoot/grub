@@ -50,6 +50,7 @@
 #include <grub/video.h>
 #include <grub/memory.h>
 #include <grub/i18n.h>
+#include <grub/slaunch.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -177,6 +178,7 @@ static grub_err_t
 grub_multiboot_boot (void)
 {
   grub_err_t err;
+  grub_uint32_t mbi_size;
 
 #ifdef GRUB_USE_MULTIBOOT2
   struct grub_relocator32_state state = MULTIBOOT2_INITIAL_STATE;
@@ -185,10 +187,20 @@ grub_multiboot_boot (void)
 #endif
   state.MULTIBOOT_ENTRY_REGISTER = GRUB_MULTIBOOT (payload_eip);
 
-  err = GRUB_MULTIBOOT (make_mbi) (&state.MULTIBOOT_MBI_REGISTER);
+  err = GRUB_MULTIBOOT (make_mbi) (&state.MULTIBOOT_MBI_REGISTER, &mbi_size);
 
   if (err)
     return err;
+
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      err = grub_multiboot2_perform_slaunch (state.MULTIBOOT_MBI_REGISTER,
+                                             mbi_size);
+      if (err)
+        return grub_error (err, N_("failed to perform Multiboot2 slaunch"));
+    }
+#endif
 
   if (grub_efi_is_finished)
     normal_boot (GRUB_MULTIBOOT (relocator), state);

@@ -44,7 +44,9 @@
 #error "I'm confused"
 #endif
 
+#include <grub/i386/txt.h>
 #include <grub/i386/relocator.h>
+#include <grub/slaunch.h>
 
 #define CONCAT(a,b)	CONCAT_(a, b)
 #define CONCAT_(a,b)	a ## b
@@ -73,6 +75,11 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
   grub_off_t phlimit;
   unsigned int i;
   void *source = NULL;
+#ifdef GRUB_USE_MULTIBOOT2
+  struct grub_slaunch_params *slparams = &grub_multiboot2_slparams;
+  grub_uint32_t mle_hdr_offset;
+  struct grub_txt_mle_header *mle_hdr;
+#endif
 
   if (ehdr->e_ident[EI_MAG0] != ELFMAG0
       || ehdr->e_ident[EI_MAG1] != ELFMAG1
@@ -127,6 +134,18 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
     {
       load_size = highest_load - mld->link_base_addr;
 
+#ifndef GRUB_USE_MULTIBOOT2
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        return grub_error (GRUB_ERR_BAD_OS, "Only multiboot2 supported for slaunch");
+#else
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+        {
+          /* Do not go below GRUB_TXT_PMR_ALIGN. */
+          if (mld->align < GRUB_TXT_PMR_ALIGN)
+            mld->align = GRUB_TXT_PMR_ALIGN;
+        }
+#endif
+
       grub_dprintf ("multiboot_loader", "align=0x%lx, preference=0x%x, "
 		    "load_size=0x%x, avoid_efi_boot_services=%d\n",
 		    (long) mld->align, mld->preference, load_size,
@@ -148,9 +167,57 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 
       mld->load_base_addr = get_physical_target_address (ch);
       source = get_virtual_current_address (ch);
+
+#ifdef GRUB_USE_MULTIBOOT2
+      grub_memset (source, 0, load_size);
+      grub_dprintf ("multiboot_loader", "load_base_addr=0x%lx, source=0x%lx\n",
+                    (long) mld->load_base_addr, (long) source);
+
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        {
+          slparams->mle_start = mld->load_base_addr;
+          slparams->mle_mem = source;
+          slparams->mle_ptab_size = 0;
+        }
+
+      if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
+        {
+          /*
+           * Allocate the binary together with the page tables to make one
+           * contiguous block for MLE.
+           */
+          slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (load_size);
+          slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
+
+          err = grub_relocator_alloc_chunk_align_safe (GRUB_MULTIBOOT (relocator), &ch,
+                                                       GRUB_MEMORY_MACHINE_UPPER_START,
+                                                       mld->load_base_addr - slparams->mle_ptab_size,
+                                                       slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN,
+                                                       GRUB_RELOCATOR_PREFERENCE_NONE, 1);
+          if (err)
+            {
+              grub_dprintf ("multiboot_loader", "Cannot allocate memory for MLE page tables\n");
+              return err;
+            }
+
+          slparams->mle_ptab_mem = get_virtual_current_address (ch);
+          slparams->mle_ptab_target = (grub_uint64_t) get_physical_target_address (ch);
+          grub_dprintf ("multiboot_loader", "mle_ptab_mem = %p, mle_ptab_target = %lx, mle_ptab_size = %x\n",
+                        slparams->mle_ptab_mem, (unsigned long) slparams->mle_ptab_target,
+                        (unsigned) slparams->mle_ptab_size);
+        }
+#endif
     }
   else
-    mld->load_base_addr = mld->link_base_addr;
+    {
+#ifdef GRUB_USE_MULTIBOOT2
+      /* TODO: support non-relocatable */
+      if (grub_slaunch_platform_type () != SLP_NONE)
+        return grub_error (GRUB_ERR_BAD_OS, "Non-relocatable ELF not supported with slaunch");
+#endif
+
+      mld->load_base_addr = mld->link_base_addr;
+    }
 
   grub_dprintf ("multiboot_loader", "relocatable=%d, link_base_addr=0x%x, "
 		"load_base_addr=0x%x\n", mld->relocatable,
@@ -212,6 +279,27 @@ CONCAT(grub_multiboot_load_elf, XX) (mbi_load_data_t *mld)
 	    }
         }
     }
+
+#ifdef GRUB_USE_MULTIBOOT2
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      /* TODO: decide on universal way of conveying location of MLE header */
+      for (mle_hdr_offset = 0; mle_hdr_offset < 0x1000; mle_hdr_offset += 16)
+        {
+          mle_hdr = (struct grub_txt_mle_header *)((grub_addr_t)source + mle_hdr_offset);
+          if (!grub_memcmp (mle_hdr->uuid, GRUB_TXT_MLE_UUID, 16))
+            {
+              break;
+            }
+        }
+
+      if (mle_hdr_offset >= 0x1000)
+        return grub_error (GRUB_ERR_BAD_ARGUMENT, "MLE header not found");
+
+      slparams->mle_header_offset = mle_hdr_offset;
+      slparams->mle_size = mle_hdr->mle_end - mle_hdr->mle_start;
+    }
+#endif
 
   for (i = 0; i < phnum; i++)
     if (phdr(i)->p_vaddr <= ehdr->e_entry

@@ -103,12 +103,17 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 {
   grub_file_t file;
   grub_ssize_t size;
+  void *new_module = NULL;
 
-  if (!argc)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
+  if (argc != 1)
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("one argument expected: filename"));
 
   if (slp == SLP_NONE)
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("secure launch not enabled"));
+
+  if (slp > SLP_AMD_SKINIT)
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		       N_("unknown secure launch platform type: %d"), slp);
 
   grub_errno = GRUB_ERR_NONE;
 
@@ -125,12 +130,12 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
       goto fail;
     }
 
-  slaunch_module = grub_malloc (size);
+  new_module = grub_malloc (size);
 
-  if (slaunch_module == NULL)
+  if (new_module == NULL)
     goto fail;
 
-  if (grub_file_read (file, slaunch_module, size) != size)
+  if (grub_file_read (file, new_module, size) != size)
     {
       if (grub_errno == GRUB_ERR_NONE)
 	grub_error (GRUB_ERR_FILE_READ_ERROR, N_("premature end of file: %s"),
@@ -140,13 +145,13 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 
   if (slp == SLP_INTEL_TXT)
     {
-      if (!grub_txt_is_sinit_acmod (slaunch_module, size))
+      if (!grub_txt_is_sinit_acmod (new_module, size))
 	{
 	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("it does not look like SINIT ACM"));
 	  goto fail;
 	}
 
-      if (!grub_txt_acmod_match_platform (slaunch_module))
+      if (!grub_txt_acmod_match_platform (new_module))
 	{
 	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("SINIT ACM does not match platform"));
 	  goto fail;
@@ -154,7 +159,7 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
     }
   else if (slp == SLP_AMD_SKINIT)
     {
-      if (!grub_skl_set_module (slaunch_module, size))
+      if (!grub_skl_set_module (new_module, size))
 	{
 	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("SKL module isn't correct"));
 	  goto fail;
@@ -163,15 +168,16 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
 
   grub_file_close (file);
 
+  grub_free (slaunch_module);
+  slaunch_module = new_module;
+
   return GRUB_ERR_NONE;
 
  fail:
   grub_error_push ();
 
-  grub_free (slaunch_module);
+  grub_free (new_module);
   grub_file_close (file);
-
-  slaunch_module = NULL;
 
   grub_error_pop ();
 
@@ -206,16 +212,21 @@ GRUB_MOD_INIT (slaunch)
 				       N_("[--legacy-linux]"),
 				       N_("Enable secure launcher"));
   cmd_slaunch_module = grub_register_command ("slaunch_module", grub_cmd_slaunch_module,
-					      NULL, N_("Secure launcher module command"));
+					      NULL, N_("Load secure launcher module from file"));
   cmd_slaunch_state = grub_register_command ("slaunch_state", grub_cmd_slaunch_state,
 					     NULL, N_("Display secure launcher state"));
 }
 
 GRUB_MOD_FINI (slaunch)
 {
-  grub_unregister_command (cmd_slaunch_state);
-  grub_unregister_command (cmd_slaunch_module);
-  grub_unregister_command (cmd_slaunch);
+  if (cmd_slaunch_state)
+    grub_unregister_command (cmd_slaunch_state);
+
+  if (cmd_slaunch_module)
+    grub_unregister_command (cmd_slaunch_module);
+
+  if (cmd_slaunch)
+    grub_unregister_command (cmd_slaunch);
 
   if (slp == SLP_INTEL_TXT)
     grub_txt_shutdown ();

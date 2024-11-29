@@ -159,6 +159,7 @@ grub_sl_txt_setup_linux (struct grub_slaunch_params *slparams, struct grub_reloc
   *prot_mode_mem = (char *)*prot_mode_mem + slparams->mle_ptab_size;
   *prot_mode_target += slparams->mle_ptab_size;
 
+  slparams->mle_mem = *prot_mode_mem;
   slparams->mle_start = *prot_mode_target;
   slparams->mle_size = prot_size;
 
@@ -231,6 +232,7 @@ grub_sl_skinit_setup_linux (struct grub_slaunch_params *slparams, struct grub_re
   /* Zero out memory to get stable MLE measurements. */
   grub_memset (prot_mode_mem, 0, total_size);
 
+  slparams->mle_mem = prot_mode_mem;
   slparams->mle_start = prot_mode_target;
   slparams->mle_size = prot_file_size;
 

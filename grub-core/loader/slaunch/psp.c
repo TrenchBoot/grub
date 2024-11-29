@@ -153,7 +153,7 @@ get_psp_bar_addr (void)
   return (grub_uint64_t) pspbaselo;
 }
 
-static const struct pci_psp_device *
+static bool
 is_drtm_device (grub_uint16_t vendor_id, grub_uint16_t dev_id)
 {
   grub_uint32_t max_psp_devs = sizeof (psp_devs_list) / sizeof (psp_devs_list[0]);
@@ -174,10 +174,10 @@ is_drtm_device (grub_uint16_t vendor_id, grub_uint16_t dev_id)
     {
       grub_dprintf ("slaunch", "DRTM: AMD SP device (PCI info: 0x%04x, 0x%04x) does not have PSP\n",
 		    psp->vendor_id, psp->dev_id);
-      psp = NULL;
+      return false;
     }
 
-  return psp;
+  return true;
 }
 
 grub_err_t
@@ -186,7 +186,6 @@ grub_psp_discover (void)
   grub_pci_device_t dev;
   grub_pci_address_t addr;
   grub_uint16_t vendor_id, dev_id;
-  const struct pci_psp_device *psp = NULL;
   grub_uint64_t bar2_addr = 0;
 
   for (dev.bus = 0; dev.bus < GRUB_PCI_NUM_BUS; dev.bus++)
@@ -199,15 +198,13 @@ grub_psp_discover (void)
 	      vendor_id = grub_pci_read_word (addr);
 	      addr = grub_pci_make_address (dev, 2);
 	      dev_id = grub_pci_read_word (addr);
-	      psp = is_drtm_device (vendor_id, dev_id);
-	      if (psp)
+	      if (is_drtm_device (vendor_id, dev_id))
 		goto psp_found;
 	    }
 	}
     }
 
-  if (!psp)
-    return grub_error (GRUB_ERR_BAD_DEVICE, N_("DRTM: failed to find PSP\n"));
+  return grub_error (GRUB_ERR_BAD_DEVICE, N_("DRTM: failed to find PSP\n"));
 
 psp_found:
   init_drtm_device (dev);
@@ -227,19 +224,15 @@ init_drtm_device (grub_pci_device_t dev)
   grub_pci_address_t pci_cmd_addr, pin_addr, lat_addr;
 
   /* Enable memory space access for PSP */
-  pci_cmd = 0;
   pci_cmd_addr = grub_pci_make_address (dev, GRUB_PCI_REG_COMMAND);
-  pci_cmd = grub_pci_read_word (pci_cmd_addr);
-  pci_cmd |= 0x2;
+  pci_cmd = grub_pci_read_word (pci_cmd_addr) | 0x2;
   grub_pci_write_word (pci_cmd_addr, pci_cmd);
 
   /* Enable PCI interrupts */
-  pin = 0;
   pin_addr = grub_pci_make_address (dev, GRUB_PCI_REG_IRQ_PIN);
   pin = grub_pci_read_byte (pin_addr);
   if (pin)
     {
-      pci_cmd = 0;
       pci_cmd = grub_pci_read_word (pci_cmd_addr);
       if (pci_cmd & 0x400)
 	{
@@ -249,13 +242,10 @@ init_drtm_device (grub_pci_device_t dev)
     }
 
   /* Set PSP at bus master */
-  pci_cmd = 0;
-  pci_cmd = grub_pci_read_word (pci_cmd_addr);
-  pci_cmd |= 0x4;
+  pci_cmd = grub_pci_read_word (pci_cmd_addr) | 0x4;
   grub_pci_write_word (pci_cmd_addr, pci_cmd);
 
-  /* SET PCI latency timer */
-  lat = 0;
+  /* Set PCI latency timer */
   lat_addr = grub_pci_make_address (dev, GRUB_PCI_REG_LAT_TIMER);
   lat = grub_pci_read_byte (lat_addr);
   if (lat < 16)
@@ -377,10 +367,11 @@ int
 grub_drtm_setup_tmrs (grub_uint64_t tmr_end)
 {
   grub_uint64_t tmr_count = 0;
+  grub_uint64_t rem = 0;
   grub_uint32_t status = 0;
 
-  tmr_count = tmr_end / drtm_capability.tmr_alignment;
-  if (tmr_end % drtm_capability.tmr_alignment == 1)
+  tmr_count = grub_divmod64 (tmr_end, drtm_capability.tmr_alignment, &rem);
+  if (rem != 0)
     tmr_count++;
 
   if (tmr_count > GRUB_UINT_MAX)

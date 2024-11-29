@@ -108,7 +108,8 @@ grub_skinit_prepare_cpu (void)
     {
       mcg_stat = grub_rdmsr (GRUB_MSR_X86_MC0_STATUS + i * 4);
       if (mcg_stat & (1ULL << 63))
-	return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch MCG[%u] = %lx ERROR"), i, mcg_stat);
+        return grub_error (GRUB_ERR_BAD_DEVICE, N_("secure launch MCG[%u] = %llx ERROR"),
+                           i, (unsigned long long)mcg_stat);
     }
 
   return GRUB_ERR_NONE;
@@ -145,19 +146,15 @@ grub_skinit_psp_memory_protect (struct grub_slaunch_params *slparams)
        * On legacy Linux boots, the relocator is used to map the EFI memory map buffer
        * and return a virtual address to use. This virtual address is stashed in slparams.
        */
-      efi_memmap = (grub_uint64_t)slparams->efi_memmap_mem;
+      efi_memmap = (grub_uint64_t)(grub_addr_t)slparams->efi_memmap_mem;
     }
 
-  desc = (grub_efi_memory_descriptor_t *) efi_memmap;
-  memory_map_end = (grub_efi_memory_descriptor_t *) (efi_memmap + efi_info->efi_mmap_size);
+  desc = (grub_efi_memory_descriptor_t *)(grub_addr_t) efi_memmap;
+  memory_map_end = (grub_efi_memory_descriptor_t *)(grub_addr_t) (efi_memmap + efi_info->efi_mmap_size);
   for (; desc < memory_map_end; desc = (grub_efi_memory_descriptor_t *) ((char *) desc + efi_info->efi_mem_desc_size))
     {
       tmr_end = desc->physical_start + (desc->num_pages << 12);
     }
-
-  err = grub_psp_discover ();
-  if (err != GRUB_ERR_NONE)
-    return err;
 
   grub_drtm_kick_psp ();
 
@@ -192,7 +189,7 @@ grub_skinit_send_init_ipi_shorthand (void)
       /* mask off low order bits to get base address */
       apic_base &= GRUB_MSR_X86_APICBASE_BASE;
       /* access ICR through MMIO */
-      icr_reg = (grub_uint32_t *)(grub_uint64_t)(apic_base + GRUB_MSR_X86_LAPIC_ICR_LO);
+      icr_reg = (grub_uint32_t *)(grub_addr_t)(apic_base + GRUB_MSR_X86_LAPIC_ICR_LO);
 
       grub_writel ((GRUB_MSR_X86_ICR_DELIVER_EXCL_SELF|GRUB_MSR_X86_ICR_MODE_INIT), icr_reg);
     }

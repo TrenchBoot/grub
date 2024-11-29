@@ -28,6 +28,8 @@
 #include <grub/cpu/relocator.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/mmio.h>
+#include <grub/i386/psp.h>
+#include <grub/i386/tpm.h>
 #include <grub/i386/txt.h>
 #include <grub/i386/skinit.h>
 
@@ -37,9 +39,9 @@ extern void dl_trampoline(grub_uint32_t dce_base, grub_uint32_t dce_size, grub_u
 
 void dl_entry (grub_uint64_t dl_ctx)
 {
-  struct grub_slr_bl_context *bl_ctx = (struct grub_slr_bl_context *)dl_ctx;
-  struct grub_slaunch_params *slparams = (struct grub_slaunch_params *)bl_ctx->context;
-  struct grub_relocator32_state state;
+  struct grub_slr_bl_context *bl_ctx = (struct grub_slr_bl_context *)(grub_addr_t)dl_ctx;
+  struct grub_slaunch_params *slparams = (struct grub_slaunch_params *)(grub_addr_t)bl_ctx->context;
+  struct grub_relocator32_state state = {0};
   grub_err_t err;
 
   state.edi = slparams->platform_type;
@@ -50,7 +52,7 @@ void dl_entry (grub_uint64_t dl_ctx)
 
   if (state.edi == SLP_INTEL_TXT)
     {
-      err = grub_set_mtrrs_for_acmod ((void *)slparams->dce_base);
+      err = grub_set_mtrrs_for_acmod ((void *)(grub_addr_t)slparams->dce_base);
       if (err)
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("setting MTRRs for TXT SINIT failed"));
@@ -68,12 +70,18 @@ void dl_entry (grub_uint64_t dl_ctx)
     {
       grub_skl_link_amd_info (slparams);
 
-      err = grub_skinit_psp_memory_protect (slparams);
-      if ( err )
+      err = grub_psp_discover ();
+      if (err == GRUB_ERR_NONE)
         {
-          grub_error (GRUB_ERR_BAD_DEVICE, N_("setup PSP TMR memory protection failed"));
-          return;
+          err = grub_skinit_psp_memory_protect (slparams);
+          if (err != GRUB_ERR_NONE)
+            {
+              grub_error (GRUB_ERR_BAD_DEVICE, N_("setup PSP TMR memory protection failed"));
+              return;
+            }
         }
+      else
+        grub_tpm_relinquish_locality (0);
 
       err = grub_skinit_prepare_cpu ();
       if ( err )
@@ -85,6 +93,11 @@ void dl_entry (grub_uint64_t dl_ctx)
       /* Have to do this after EBS or things blow up */
       grub_skinit_send_init_ipi_shorthand ();
     }
+  else
+    {
+      grub_error (GRUB_ERR_BUG, N_("unknown dynamic launch platform: %d"), state.edi);
+      return;
+    }
 
   if (!(grub_rdmsr (GRUB_MSR_X86_APICBASE) & GRUB_MSR_X86_APICBASE_BSP))
     {
@@ -92,7 +105,7 @@ void dl_entry (grub_uint64_t dl_ctx)
       return;
     }
 
-  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX)
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX || slparams->boot_type == GRUB_SL_BOOT_TYPE_MB2)
     {
       if (state.edi == SLP_INTEL_TXT)
         {
@@ -102,13 +115,19 @@ void dl_entry (grub_uint64_t dl_ctx)
           state.ecx = slparams->dce_size;
           state.edx = 0;
         }
-      else /* SLP_AMD_SKINIT */
-        state.eax = slparams->dce_base;
+      else if (state.edi == SLP_AMD_SKINIT)
+        {
+          state.eax = slparams->dce_base;
+        }
 
       grub_relocator32_boot (slparams->relocator, state, 0);
     }
-  else /* GRUB_SL_BOOT_TYPE_EFI */
+  else if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
     {
       dl_trampoline (slparams->dce_base, slparams->dce_size, state.edi);
+    }
+  else
+    {
+      grub_error (GRUB_ERR_BUG, N_("unknown dynamic launch boot type: %d"), slparams->boot_type);
     }
 }

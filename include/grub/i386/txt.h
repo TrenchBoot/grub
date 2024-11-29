@@ -21,6 +21,9 @@
 #ifndef GRUB_TXT_H
 #define GRUB_TXT_H 1
 
+#include <grub/tpm.h>
+#include <grub/i386/mmio.h>
+
 /* Intel TXT Software Developers Guide */
 
 /* Chapter 2, Table 2 MLE/SINIT Capabilities Field Bit Definitions */
@@ -417,6 +420,8 @@ struct grub_txt_sinit_memory_descriptor_records
 /* 2.1 MLE Architecture Overview */
 /* Table 1. MLE Header structure */
 
+#define GRUB_TXT_MLE_UUID "\x5a\xac\x82\x90\x6f\x47\xa7\x74\x0f\x5c\x55\xa2\xcb\x51\xb6\x42"
+
 struct grub_txt_mle_header
 {
   grub_uint8_t uuid[16];
@@ -634,6 +639,36 @@ struct grub_smx_parameters
   grub_uint32_t txt_feature_ext_flags;
 } GRUB_PACKED;
 
+/* Structures and constants used for TPM 1.2 event log initialization */
+struct grub_tpm12_pcr_event
+{
+    grub_uint32_t pcr_index;
+    grub_uint32_t type;
+    grub_uint8_t digest[SHA1_DIGEST_SIZE];
+    grub_uint32_t data_size;
+    grub_uint8_t data[];
+} GRUB_PACKED;
+
+#define EVTLOG_SIGNATURE "TXT Event Container"
+#define EVTLOG_CNTNR_MAJOR_VER 1
+#define EVTLOG_CNTNR_MINOR_VER 0
+#define EVTLOG_EVT_MAJOR_VER 1
+#define EVTLOG_EVT_MINOR_VER 0
+
+struct grub_txt_event_log_container
+{
+    grub_uint8_t signature[20];
+    grub_uint8_t reserved[12];
+    grub_uint8_t container_ver_major;
+    grub_uint8_t container_ver_minor;
+    grub_uint8_t pcr_event_ver_major;
+    grub_uint8_t pcr_event_ver_minor;
+    grub_uint32_t size;
+    grub_uint32_t pcr_events_offset;
+    grub_uint32_t next_event_offset;
+    struct grub_tpm12_pcr_event pcr_events[];
+} GRUB_PACKED;
+
 static inline void
 grub_txt_getsec_parameters (grub_uint32_t index, grub_uint32_t *eax_out,
                             grub_uint32_t *ebx_out, grub_uint32_t *ecx_out)
@@ -659,6 +694,8 @@ extern struct grub_txt_acm_header* grub_txt_sinit_select (struct grub_txt_acm_he
 extern grub_err_t grub_txt_verify_platform (void);
 extern grub_err_t grub_txt_prepare_cpu (void);
 extern grub_err_t grub_set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr);
+
+extern void grub_txt_init_tpm_event_log (void *buf, grub_size_t size);
 
 extern grub_uint32_t grub_txt_get_mle_ptab_size (grub_uint32_t mle_size);
 extern void grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams);

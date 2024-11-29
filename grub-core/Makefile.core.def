@@ -1878,12 +1878,12 @@ module = {
   x86 = loader/slaunch/acmod.c;
   x86 = loader/slaunch/verify.c;
   x86 = loader/slaunch/i386_linux.c;
-  x86 = loader/slaunch/x86_efi_linux.c;
   x86 = loader/slaunch/psp.c;
   x86 = loader/slaunch/skinit.c;
   x86 = loader/slaunch/skl.c;
   x86 = loader/slaunch/dlstub.c;
   x86 = loader/efi/dltrampoline.S;
+  x86_64_efi = loader/slaunch/x86_efi_linux.c;
   enable = x86;
 };
 

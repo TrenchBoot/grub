@@ -703,7 +703,7 @@ grub_linux_boot (void)
         return GRUB_ERR_BAD_DEVICE;
 
       dlinfo = grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
-      dl_entry ((grub_uint64_t)&dlinfo->bl_context);
+      dl_entry ((grub_uint64_t)(grub_addr_t)&dlinfo->bl_context);
 
       /* If this returns, something failed miserably */
       return GRUB_ERR_BAD_DEVICE;

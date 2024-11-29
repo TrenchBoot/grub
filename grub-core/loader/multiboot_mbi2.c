@@ -36,6 +36,11 @@
 #include <grub/i18n.h>
 #include <grub/net.h>
 #include <grub/lib/cmdline.h>
+#include <grub/i386/memory.h>
+#include <grub/i386/skinit.h>
+#include <grub/i386/txt.h>
+#include <grub/slaunch.h>
+#include <grub/slr_table.h>
 
 #if defined (GRUB_MACHINE_EFI)
 #include <grub/efi/efi.h>
@@ -63,6 +68,12 @@ struct module
   int cmdline_size;
 };
 
+struct fill_policy_hook_data
+{
+  grub_uint32_t mbi_target;
+  grub_uint32_t mbi_size;
+};
+
 static struct module *modules, *modules_last;
 static grub_size_t cmdline_size;
 static grub_size_t total_modcmd;
@@ -75,6 +86,8 @@ static unsigned elf_sec_shstrndx;
 static void *elf_sections;
 static int keep_bs = 0;
 static grub_uint32_t load_base_addr;
+
+struct grub_slaunch_params grub_multiboot2_slparams = {0};
 
 void
 grub_multiboot2_add_elfsyms (grub_size_t num, grub_size_t entsize,
@@ -119,6 +132,7 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
   grub_uint32_t console_required = 0;
   struct multiboot_header_tag_framebuffer *fbtag = NULL;
   int accepted_consoles = GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT;
+  struct grub_slaunch_params *slparams = &grub_multiboot2_slparams;
   mbi_load_data_t mld;
 
   mld.mbi_ver = 2;
@@ -275,8 +289,18 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 			 "load address tag without entry address tag");
     }
 
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      slparams->relocator = grub_multiboot2_relocator;
+      slparams->boot_type = GRUB_SL_BOOT_TYPE_MB2;
+      slparams->platform_type = grub_slaunch_platform_type ();
+    }
+
   if (addr_tag)
     {
+      if (slparams->platform_type != SLP_NONE)
+        return grub_error (GRUB_ERR_BAD_OS, "Slaunch not supported with multiboot addr tag");
+
       grub_uint64_t load_addr = (addr_tag->load_addr + 1)
 	? addr_tag->load_addr : (addr_tag->header_addr
 				 - ((char *) header - (char *) mld.buffer));
@@ -390,6 +414,36 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
     err = grub_multiboot2_set_console (GRUB_MULTIBOOT2_CONSOLE_EGA_TEXT,
 				       accepted_consoles,
 				       0, 0, 0, console_required);
+
+  if (slparams->platform_type != SLP_NONE)
+    {
+      grub_relocator_chunk_t ch;
+
+      if (grub_relocator_alloc_chunk_align_safe (grub_multiboot2_relocator, &ch, 0x1000000,
+                                                 UP_TO_TOP32 (GRUB_SLAUNCH_TPM_EVT_LOG_SIZE),
+                                                 GRUB_SLAUNCH_TPM_EVT_LOG_SIZE, GRUB_PAGE_SIZE,
+                                                 GRUB_RELOCATOR_PREFERENCE_HIGH, 1))
+        {
+          grub_free (mld.buffer);
+          return grub_error (GRUB_ERR_OUT_OF_MEMORY, "Could not allocate TPM event log area");
+        }
+
+      slparams->tpm_evt_log_base = get_physical_target_address (ch);
+      slparams->tpm_evt_log_size = GRUB_SLAUNCH_TPM_EVT_LOG_SIZE;
+
+      /* It's OK to call this for AMD SKINIT because SKL erases the log before use. */
+      if (slparams->platform_type == SLP_INTEL_TXT || slparams->platform_type == SLP_AMD_SKINIT)
+        grub_txt_init_tpm_event_log (get_virtual_current_address (ch),
+                                     slparams->tpm_evt_log_size);
+
+      grub_dprintf ("multiboot_loader", "tpm_evt_log_base = 0x%lx, tpm_evt_log_size = 0x%x\n",
+                    (unsigned long) slparams->tpm_evt_log_base,
+                    (unsigned) slparams->tpm_evt_log_size);
+
+      if (slparams->platform_type == SLP_INTEL_TXT)
+        grub_txt_setup_mle_ptab (slparams);
+    }
+
   return err;
 }
 
@@ -701,7 +755,7 @@ retrieve_video_parameters (grub_properly_aligned_t **ptrorig)
 }
 
 grub_err_t
-grub_multiboot2_make_mbi (grub_uint32_t *target)
+grub_multiboot2_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
 {
   grub_properly_aligned_t *ptrorig;
   grub_properly_aligned_t *mbistart;
@@ -1002,7 +1056,9 @@ grub_multiboot2_make_mbi (grub_uint32_t *target)
       / sizeof (grub_properly_aligned_t);
   }
 
-  ((grub_uint32_t *) mbistart)[0] = (char *) ptrorig - (char *) mbistart;
+  *size = (char *) ptrorig - (char *) mbistart;
+
+  ((grub_uint32_t *) mbistart)[0] = *size;
   ((grub_uint32_t *) mbistart)[1] = 0;
 
   return GRUB_ERR_NONE;
@@ -1125,4 +1181,88 @@ grub_multiboot2_set_bootdev (void)
     grub_device_close (dev);
 
   bootdev_set = 1;
+}
+
+static int
+fill_policy_hook(int is_start, struct grub_slr_policy_entry *next_entry,
+                 void *data)
+{
+  int i = 0;
+  unsigned m;
+  struct module *cur;
+  struct fill_policy_hook_data *hook_data = data;
+
+  if (is_start)
+    {
+      next_entry->pcr = 18;
+      next_entry->entity_type = GRUB_SLR_ET_MULTIBOOT2_INFO;
+      next_entry->entity = hook_data->mbi_target;
+      next_entry->size = hook_data->mbi_size;
+      next_entry->flags = 0;
+      grub_strcpy (next_entry->evt_info, "Measured MB2 information");
+      i = 1;
+    }
+  else
+    {
+      for (m = 0, cur = modules; m < modcnt; m++, cur = cur->next)
+        {
+          next_entry[i].pcr = 17;
+          next_entry[i].entity_type = GRUB_SLR_ET_MULTIBOOT2_MODULE;
+          next_entry[i].entity = cur->start;
+          next_entry[i].size = cur->size;
+          next_entry[i].flags = 0;
+          grub_strcpy (next_entry[i].evt_info, "Measured MB2 module");
+          i++;
+        }
+    }
+
+  return i;
+}
+
+grub_err_t
+grub_multiboot2_perform_slaunch (grub_uint32_t mbi_target,
+                                 grub_uint32_t mbi_size)
+{
+  grub_err_t err;
+  struct grub_slaunch_params *slparams = &grub_multiboot2_slparams;
+  struct grub_slr_entry_dl_info *dlinfo;
+  struct fill_policy_hook_data hook_data = {
+    .mbi_target = mbi_target,
+    .mbi_size = mbi_size,
+  };
+
+  slparams->boot_params_base = mbi_target;
+
+  slparams->fill_policy_hook = &fill_policy_hook;
+  slparams->fill_policy_hook_data = &hook_data;
+
+  if (slparams->platform_type == SLP_INTEL_TXT)
+    {
+      err = grub_txt_boot_prepare (slparams);
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "TXT boot preparation failed");
+    }
+  else if (slparams->platform_type == SLP_AMD_SKINIT)
+    {
+      err = grub_skl_setup_module (slparams);
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "Failed to setup SKL for Multiboot2");
+
+      err = grub_skl_prepare_bootloader_data (slparams);
+      if (err != GRUB_ERR_NONE)
+        return grub_error (err, "SKL preparations have failed");
+    }
+  else
+    return grub_error (GRUB_ERR_BAD_DEVICE,
+                       N_("Unknown secure launcher platform type: %d\n"), slparams->platform_type);
+
+  grub_dprintf ("multiboot_loader", "slr_table_base = 0x%lx, slr_table_size = 0x%x\n",
+                (unsigned long) slparams->slr_table_base,
+                (unsigned) slparams->slr_table_size);
+
+  dlinfo = grub_slr_next_entry_by_tag (slparams->slr_table_mem, NULL, GRUB_SLR_ENTRY_DL_INFO);
+  dl_entry ((grub_uint64_t)(grub_addr_t) &dlinfo->bl_context);
+
+  /* If this returns, something failed miserably */
+  return GRUB_ERR_BAD_DEVICE;
 }
