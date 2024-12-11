@@ -747,6 +747,12 @@ grub_multiboot2_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
   grub_size_t bufsize;
   grub_relocator_chunk_t ch;
 
+  if (grub_slaunch_platform_type () != SLP_NONE)
+    {
+      /* MLE can't call pre-DLE services. */
+      keep_bs = 0;
+    }
+
   bufsize = grub_multiboot2_get_mbi_size ();
 
   COMPILE_TIME_ASSERT (MULTIBOOT_TAG_ALIGN % sizeof (grub_properly_aligned_t) == 0);
