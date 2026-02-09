@@ -933,7 +933,5 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   grub_setup_slr_table (slparams, (struct grub_slr_entry_hdr *)&slr_intel_info_staging);
   set_txt_info_ptr (slparams, os_mle_data);
 
-  grub_tpm_relinquish_locality (0);
-
   return GRUB_ERR_NONE;
 }

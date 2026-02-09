@@ -27,6 +27,7 @@
 #include <grub/cpu/relocator.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/mmio.h>
+#include <grub/i386/tpm.h>
 #include <grub/i386/txt.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
@@ -39,6 +40,8 @@ void dl_entry (grub_uint64_t dl_ctx)
   struct grub_slaunch_params *slparams = (void *)(unsigned long) bl_ctx->context;
   struct grub_relocator32_state state;
   grub_err_t err;
+
+  grub_tpm_relinquish_locality (0);
 
   state.edi = slparams->platform_type;
 
