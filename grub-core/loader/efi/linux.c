@@ -253,7 +253,7 @@ grub_arch_efi_linux_boot_image (grub_addr_t addr, grub_size_t size, char *args)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      err = grub_sl_efi_txt_setup (&slparams, kernel_addr, loaded_image);
+      err = grub_sl_efi_txt_setup (&slparams, image_handle);
       if (err != GRUB_ERR_NONE)
         {
           grub_error (err, "Secure Launch setup TXT failed");

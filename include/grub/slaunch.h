@@ -109,9 +109,32 @@ grub_err_t grub_sl_txt_setup_linux (struct grub_slaunch_params *slparams,
                                     grub_size_t total_size, grub_size_t prot_size,
                                     void **prot_mode_mem, grub_addr_t *prot_mode_target);
 
+#ifdef GRUB_MACHINE_EFI
+
+#include <grub/efi/api.h>
+
 /* Linux EFI functions */
-grub_err_t grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
-                                  grub_efi_loaded_image_t *loaded_image);
+grub_err_t grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams,
+			          grub_efi_handle_t image_handle);
+
+#define GRUB_SLAUNCH_PROTOCOL_GUID    \
+  { 0x534189e0, 0x6fde, 0x413d, \
+    { 0xbe, 0x91, 0xcd, 0x4e, 0x8d, 0x67, 0x2f, 0xea } \
+  }
+
+struct grub_slaunch_protocol {
+  grub_efi_status_t
+  (__grub_efi_api *set_image)(struct grub_slaunch_protocol *this,
+                              struct linux_kernel_params *boot_params,
+                              grub_uint64_t base,
+                              grub_uint32_t header_offset);
+
+  grub_efi_status_t
+  (__grub_efi_api *launch)(struct grub_slaunch_protocol *this);
+};
+typedef struct grub_slaunch_protocol grub_slaunch_protocol_t;
+
+#endif
 
 #endif /* ASM_FILE */
 

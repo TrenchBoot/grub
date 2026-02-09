@@ -40,28 +40,6 @@ GRUB_MOD_LICENSE ("GPLv3+");
 #define GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE		0x14000
 #define OFFSET_OF(x, y) ((grub_size_t)((grub_uint8_t *)(&(y)->x) - (grub_uint8_t *)(y)))
 
-static struct linux_kernel_params boot_params = {0};
-
-static grub_err_t
-sl_efi_locate_mle_offset (struct grub_slaunch_params *slparams,
-                          void *kernel_addr, grub_ssize_t kernel_start)
-{
-  struct linux_kernel_params *lh = (struct linux_kernel_params *)kernel_addr;
-  struct linux_kernel_info kernel_info;
-
-  /* Locate the MLE header offset in kernel_info section */
-  grub_memcpy ((void *)&kernel_info,
-               (char *)kernel_addr + kernel_start + grub_le_to_cpu32 (lh->kernel_info_offset),
-               sizeof (struct linux_kernel_info));
-
-  if (OFFSET_OF (mle_header_offset, &kernel_info) >= grub_le_to_cpu32 (kernel_info.size))
-    return grub_error (GRUB_ERR_BAD_OS, N_("not slaunch kernel: lack of mle_header_offset"));
-
-  slparams->mle_header_offset = grub_le_to_cpu32 (kernel_info.mle_header_offset);
-
-  return GRUB_ERR_NONE;
-}
-
 static void *
 sl_efi_txt_setup_slmem (struct grub_slaunch_params *slparams,
                         grub_efi_physical_address_t max_addr,
@@ -94,43 +72,41 @@ sl_efi_txt_setup_slmem (struct grub_slaunch_params *slparams,
   return slmem;
 }
 
-grub_err_t
-grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
-                       grub_efi_loaded_image_t *loaded_image)
+static const grub_guid_t grub_slaunch_protocol_guid = GRUB_SLAUNCH_PROTOCOL_GUID;
+
+static struct {
+	struct grub_slaunch_protocol	protocol;
+	struct grub_slaunch_params	*slparams;
+} slaunch_protocol = {0};
+
+static grub_efi_status_t __grub_efi_api
+grub_slaunch_set_image (struct grub_slaunch_protocol *,
+                        struct linux_kernel_params *boot_params,
+			grub_uint64_t base,
+			grub_uint32_t header_offset)
 {
-  struct linux_kernel_params *lh = (struct linux_kernel_params *)kernel_addr;
-  grub_uint64_t image_base = (unsigned long) loaded_image->image_base;
-  grub_efi_uint64_t image_size = loaded_image->image_size;
+  struct grub_slaunch_params *slparams = slaunch_protocol.slparams;
+  struct grub_txt_mle_header *mle_header;
   grub_efi_physical_address_t requested;
-  grub_ssize_t start;
+  grub_uint32_t slmem_size = 0;
+  grub_efi_status_t status;
+  void *slmem = NULL;
   grub_err_t err;
   void *addr;
-  void *slmem = NULL;
-  grub_uint32_t slmem_size = 0;
 
-  slparams->boot_type = GRUB_SL_BOOT_TYPE_EFI;
-  slparams->platform_type = grub_slaunch_platform_type ();
+  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (base + header_offset);
 
-  /*
-   * Dummy empty boot params structure for now. EFI stub will create a boot params
-   * and populate it. The SL code in EFI stub will update the boot params structure
-   * in the OSMLE data and SLRT.
-   */
-  slparams->boot_params = &boot_params;
-  slparams->boot_params_base = (unsigned long) &boot_params;
+  slparams->mle_start = base;
+  slparams->mle_size = mle_header->mle_end;
+  slparams->mle_header_offset = header_offset;
 
-  /*
-   * Note that while the boot params on the zero page are not used or updated during a Linux
-   * UEFI boot through the PE header, the values placed there in the bzImage during the build
-   * are still valid and can be treated as boot params for certain things.
-   */
-  start = (lh->setup_sects + 1) * 512;
+  slparams->boot_params = boot_params;
+  slparams->boot_params_base = (unsigned long) boot_params;
 
   /* Allocate page tables for TXT just in front of the kernel image */
-  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (image_size);
+  slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (slparams->mle_size);
   slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
-  requested = ALIGN_DOWN ((image_base - slparams->mle_ptab_size),
-                            GRUB_TXT_PMR_ALIGN);
+  requested = ALIGN_DOWN ((base - slparams->mle_ptab_size), GRUB_TXT_PMR_ALIGN);
 
   addr = grub_efi_allocate_pages_real (requested,
                                        GRUB_EFI_BYTES_TO_PAGES(slparams->mle_ptab_size),
@@ -138,25 +114,11 @@ grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
                                        GRUB_EFI_LOADER_DATA);
   if (!addr)
     {
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, N_("out of memory"));
-      return GRUB_ERR_OUT_OF_MEMORY;
+      return GRUB_EFI_OUT_OF_RESOURCES;
     }
 
   slparams->mle_ptab_mem = addr;
   slparams->mle_ptab_target = (unsigned long) addr;
-
-  /*
-   * For the MLE, skip the zero page and startup section of the binary. The MLE
-   * begins with the protected mode .text section which follows. The MLE header
-   * and MLE entry point are RVA's from the beginning of .text where startup_32
-   * begins.
-   *
-   * Note, to do the EFI boot, the entire bzImage binary is loaded since the PE
-   * header is in the startup section before the protected mode piece begins.
-   * In legacy world this part of the image would have been stripped off.
-   */
-  slparams->mle_start = image_base + start;
-  slparams->mle_size = image_size - start;
 
   /* Setup the TXT ACM page tables */
   grub_txt_setup_mle_ptab (slparams);
@@ -166,24 +128,24 @@ grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
                                   &slmem_size);
   if (!slmem)
     {
-      err = GRUB_ERR_OUT_OF_MEMORY;
+      status = GRUB_EFI_OUT_OF_RESOURCES;
       goto fail;
     }
 
-  err = sl_efi_locate_mle_offset (slparams, kernel_addr, start);
-  if (err != GRUB_ERR_NONE)
-    goto fail;
-
   /* Final stage for secure launch, setup TXT and install the SLR table */
   err = grub_txt_boot_prepare (slparams);
-  if (err != GRUB_ERR_NONE)
+  if (err != GRUB_ERR_NONE) {
+    status = GRUB_EFI_LOAD_ERROR;
     goto fail;
+  }
 
   err = grub_efi_install_slr_table (slparams);
-  if (err != GRUB_ERR_NONE)
+  if (err != GRUB_ERR_NONE) {
+    status = GRUB_EFI_LOAD_ERROR;
     goto fail;
+  }
 
-  return GRUB_ERR_NONE;
+  return GRUB_EFI_SUCCESS;
 
 fail:
 
@@ -192,5 +154,48 @@ fail:
 
   grub_efi_free_pages ((grub_addr_t)addr, slparams->mle_ptab_size);
 
-  return err;
+  return status;
+}
+
+static  grub_efi_status_t __grub_efi_api
+grub_slaunch_launch(struct grub_slaunch_protocol *)
+{
+  struct grub_slaunch_params *slparams = slaunch_protocol.slparams;
+  struct grub_slr_table *slrt = (struct grub_slr_table *)slparams->slr_table_mem;
+  struct grub_slr_entry_dl_info *dlinfo;
+
+  dlinfo = grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
+  dl_entry ((grub_uint64_t)&dlinfo->bl_context);
+
+  /* this should never return */
+  return GRUB_EFI_LOAD_ERROR;
+}
+
+grub_err_t
+grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams,
+		       grub_efi_handle_t image_handle)
+{
+  grub_efi_boot_services_t *b;
+  grub_efi_status_t status;
+
+  slparams->boot_type = GRUB_SL_BOOT_TYPE_EFI;
+  slparams->platform_type = grub_slaunch_platform_type ();
+
+  slaunch_protocol.protocol.set_image = grub_slaunch_set_image;
+  slaunch_protocol.protocol.launch = grub_slaunch_launch;
+  slaunch_protocol.slparams = slparams;
+
+  b = grub_efi_system_table->boot_services;
+  status = b->install_multiple_protocol_interfaces (&image_handle,
+                                                    &grub_slaunch_protocol_guid,
+                                                    &slaunch_protocol.protocol,
+                                                    NULL);
+  if (status != GRUB_EFI_SUCCESS)
+    {
+      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("failed to install slaunch protocol"));
+      return GRUB_ERR_BAD_ARGUMENT;
+    }
+
+  grub_dprintf ("slaunch", "Installed slaunch protocol\n");
+  return GRUB_ERR_NONE;
 }
