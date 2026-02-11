@@ -671,6 +671,8 @@ grub_linux_boot (void)
       if (err != GRUB_ERR_NONE)
         return err;
 
+      grub_txt_boot_finalize (&slparams);
+
       dlinfo = grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
       dl_entry ((unsigned long ) &dlinfo->bl_context);
 

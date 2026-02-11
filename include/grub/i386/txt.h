@@ -666,5 +666,6 @@ extern grub_err_t grub_txt_init (void);
 extern void grub_txt_shutdown (void);
 extern void grub_txt_state_show (void);
 extern grub_err_t grub_txt_boot_prepare (struct grub_slaunch_params *slparams);
+extern void grub_txt_boot_finalize (struct grub_slaunch_params *slparams);
 
 #endif

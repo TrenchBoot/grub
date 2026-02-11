@@ -895,12 +895,11 @@ grub_txt_state_show (void)
 grub_err_t
 grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
 {
-  grub_err_t err;
-  grub_uint8_t *txt_heap;
-  struct grub_txt_os_mle_data *os_mle_data;
-  struct grub_txt_mle_header *mle_header;
   struct grub_txt_acm_header *sinit_base;
   struct grub_slr_table *slrt = slparams->slr_table_mem;
+  struct grub_txt_os_mle_data *os_mle_data;
+  grub_uint8_t *txt_heap;
+  grub_err_t err;
 
   /* Setup the generic bits of the SLRT */
   grub_slr_init_table(slrt, GRUB_SLR_INTEL_TXT, slparams->slr_table_size);
@@ -911,16 +910,9 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
     return grub_errno;
 
   err = init_txt_heap (slparams, sinit_base);
-
   if (err != GRUB_ERR_NONE)
     return err;
 
-  /* Update the MLE header. */
-  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
-  mle_header->first_valid_page = 0;
-  mle_header->mle_end = slparams->mle_size;
-
-  slparams->mle_entry = mle_header->entry_point;
   slparams->dce_base = (grub_uint32_t)(grub_addr_t) sinit_base;
   slparams->dce_size = sinit_base->size * 4;
 
@@ -934,4 +926,20 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   set_txt_info_ptr (slparams, os_mle_data);
 
   return GRUB_ERR_NONE;
+}
+
+void grub_txt_boot_finalize (struct grub_slaunch_params *slparams)
+{
+  struct grub_slr_table *slrt = (struct grub_slr_table *) slparams->slr_table_mem;
+  struct grub_txt_mle_header *mle_header;
+  struct grub_slr_entry_dl_info *dlinfo;
+
+  /* Update the MLE header. */
+  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (slparams->mle_start + slparams->mle_header_offset);
+  mle_header->first_valid_page = 0;
+  mle_header->mle_end = slparams->mle_size;
+
+  dlinfo = grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
+
+  dlinfo->dlme_entry = slparams->mle_entry = mle_header->entry_point;
 }

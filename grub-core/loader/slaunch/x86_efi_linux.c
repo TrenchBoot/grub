@@ -145,6 +145,8 @@ grub_slaunch_set_image (struct grub_slaunch_protocol *,
     goto fail;
   }
 
+  grub_txt_boot_finalize (slparams);
+
   return GRUB_EFI_SUCCESS;
 
 fail:
