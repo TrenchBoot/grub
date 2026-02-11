@@ -172,6 +172,7 @@ shim_lock_verifier_init (grub_file_t io __attribute__ ((unused)),
     case GRUB_FILE_TYPE_LOADENV:
     case GRUB_FILE_TYPE_SAVEENV:
     case GRUB_FILE_TYPE_VERIFY_SIGNATURE:
+    case GRUB_FILE_TYPE_SLAUNCH_MODULE:
       *flags = GRUB_VERIFY_FLAGS_SKIP_VERIFICATION;
       return GRUB_ERR_NONE;
 
