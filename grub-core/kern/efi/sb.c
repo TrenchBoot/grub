@@ -45,7 +45,7 @@ static grub_efi_handle_t last_verified_image_handle = NULL;
  * drivers/firmware/efi/libstub/secureboot.c:efi_get_secureboot().
  */
 grub_uint8_t
-grub_efi_get_secureboot (void)
+grub_efi_get_secureboot (bool check_mok)
 {
   static grub_guid_t efi_variable_guid = GRUB_EFI_GLOBAL_VARIABLE_GUID;
   grub_efi_status_t status;
@@ -81,25 +81,30 @@ grub_efi_get_secureboot (void)
       goto out;
     }
 
-  /*
-   * See if a user has put the shim into insecure mode. If so, and if the
-   * variable doesn't have the runtime attribute set, we might as well
-   * honor that.
-   */
-  status = grub_efi_get_variable_with_attributes ("MokSBState", &shim_lock_guid,
-						  &size, (void **) &moksbstate, &attr);
-
-  /* If it fails, we don't care why. Default to secure. */
-  if (status != GRUB_EFI_SUCCESS)
+  if (check_mok)
     {
-      secureboot = GRUB_EFI_SECUREBOOT_MODE_ENABLED;
-      goto out;
-    }
+      /*
+       * See if a user has put the shim into insecure mode. If so, and if the
+       * variable doesn't have the runtime attribute set, we might as well
+       * honor that.
+       */
+      status =
+	grub_efi_get_variable_with_attributes ("MokSBState", &shim_lock_guid,
+					       &size, (void **) &moksbstate,
+					       &attr);
 
-  if (!(attr & GRUB_EFI_VARIABLE_RUNTIME_ACCESS) && *moksbstate == 1)
-    {
-      secureboot = GRUB_EFI_SECUREBOOT_MODE_DISABLED;
-      goto out;
+      /* If it fails, we don't care why. Default to secure. */
+      if (status != GRUB_EFI_SUCCESS)
+	{
+	  secureboot = GRUB_EFI_SECUREBOOT_MODE_ENABLED;
+	  goto out;
+	}
+
+      if (!(attr & GRUB_EFI_VARIABLE_RUNTIME_ACCESS) && *moksbstate == 1)
+	{
+	  secureboot = GRUB_EFI_SECUREBOOT_MODE_DISABLED;
+	  goto out;
+	}
     }
 
   secureboot = GRUB_EFI_SECUREBOOT_MODE_ENABLED;
@@ -227,7 +232,7 @@ grub_shim_lock_verifier_setup (void)
   struct grub_module_header *header;
 
   /* Secure Boot is off. Ignore shim. */
-  if (grub_efi_get_secureboot () != GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+  if (grub_efi_get_secureboot (false) != GRUB_EFI_SECUREBOOT_MODE_ENABLED)
     return;
 
   /* Find both shim protocols. */

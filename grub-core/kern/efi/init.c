@@ -120,7 +120,7 @@ grub_efi_init (void)
    * Lockdown the GRUB and register the shim_lock verifier
    * if the UEFI Secure Boot is enabled.
    */
-  if (grub_efi_get_secureboot () == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
+  if (grub_efi_get_secureboot (false) == GRUB_EFI_SECUREBOOT_MODE_ENABLED)
     {
       grub_lockdown ();
       grub_shim_lock_verifier_setup ();

@@ -619,7 +619,7 @@ grub_linux_boot (void)
     grub_size_t efi_mmap_target;
     grub_efi_uint32_t efi_desc_version;
 
-    ctx.params->secure_boot = grub_efi_get_secureboot ();
+    ctx.params->secure_boot = grub_efi_get_secureboot (true);
 
     grub_dprintf ("linux", "EFI exit boot services\n");
 

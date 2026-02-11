@@ -30,7 +30,7 @@
 
 #ifdef GRUB_MACHINE_EFI
 extern grub_uint8_t
-EXPORT_FUNC (grub_efi_get_secureboot) (void);
+EXPORT_FUNC (grub_efi_get_secureboot) (bool check_mok);
 
 extern bool
 EXPORT_FUNC (grub_is_using_legacy_shim_lock_protocol) (void);
@@ -42,7 +42,7 @@ extern void
 grub_shim_lock_verifier_setup (void);
 #else
 static inline grub_uint8_t
-grub_efi_get_secureboot (void)
+grub_efi_get_secureboot (bool)
 {
   return GRUB_EFI_SECUREBOOT_MODE_UNSET;
 }
