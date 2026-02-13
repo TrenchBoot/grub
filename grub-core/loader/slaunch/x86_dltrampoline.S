@@ -18,15 +18,11 @@
 
 #include <config.h>
 #include <grub/symbol.h>
+#include <grub/i386/crfr.h>
 
 #define GRUB_SMX_LEAF_SENTER	4
 #define CS_SEL32		0x0008
 #define DS_SEL			0x0010
-
-#define CR0_PE  0x00000001
-#define CR0_MP  0x00000002
-#define CR0_TS  0x00000008
-#define CR0_NE  0x00000020
 
 	.file	"x86_dltrampoline.S"
 	.text
@@ -34,18 +30,34 @@
 	.code64
 	.globl	dl_entry_trampoline
 dl_entry_trampoline:
-	/* %edi should contain dl_context pointer */
-	call	EXT_C(dl_entry)
+#ifndef __x86_64__
+	call	dl_enter_compat_mode
+
+	.code32
+	movl	%edi, %eax
+	movl	%esi, %ecx
+
+	/* Disable paging */
+	mov	%cr0, %esi
+	andl	$~GRUB_CR0_X86_PG, %esi
+	movl	%esi, %cr0
+#endif
+	call	EXT_C(grub_slaunch_callback)
 	ud2
 
 	.globl	dl_trampoline
 dl_trampoline:
+#ifdef __x86_64__
 	call	dl_enter_compat_mode
 
 	.code32
-	movl	$GRUB_SMX_LEAF_SENTER, %eax
 	movl	%edi, %ebx
 	movl	%esi, %ecx
+#else
+	movl	%eax, %ebx
+#endif
+
+	movl	$GRUB_SMX_LEAF_SENTER, %eax
 	xorl	%edx, %edx
 	getsec
 

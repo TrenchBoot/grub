@@ -38,14 +38,11 @@ void dl_entry (grub_uint64_t dl_ctx)
 {
   struct grub_slr_bl_context *bl_ctx = (void *)(unsigned long) dl_ctx;
   struct grub_slaunch_params *slparams = (void *)(unsigned long) bl_ctx->context;
-  struct grub_relocator32_state state;
   grub_err_t err;
 
   grub_tpm_relinquish_locality (0);
 
-  state.edi = slparams->platform_type;
-
-  if (state.edi == SLP_INTEL_TXT)
+  if (slparams->platform_type == SLP_INTEL_TXT)
     {
       if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
         grub_update_slrt_policy (slparams);
@@ -71,15 +68,5 @@ void dl_entry (grub_uint64_t dl_ctx)
       return;
     }
 
-  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX)
-    {
-      /* Configure relocator GETSEC[SENTER] call. */
-      state.eax = GRUB_SMX_LEAF_SENTER;
-      state.ebx = slparams->dce_base;
-      state.ecx = slparams->dce_size;
-      state.edx = 0;
-      grub_relocator32_boot (slparams->relocator, state, 0);
-    }
-  else /* GRUB_SL_BOOT_TYPE_EFI */
-    dl_trampoline (slparams->dce_base, slparams->dce_size);
+  dl_trampoline (slparams->dce_base, slparams->dce_size);
 }

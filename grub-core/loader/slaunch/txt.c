@@ -943,3 +943,20 @@ void grub_txt_boot_finalize (struct grub_slaunch_params *slparams)
 
   dlinfo->dlme_entry = slparams->mle_entry = mle_header->entry_point;
 }
+
+void grub_slaunch_callback (struct grub_slr_bl_context *bl_context,
+                            grub_size_t mle_header_offset)
+{
+  struct grub_slaunch_params *slparams = (void *)(unsigned long) bl_context->context;
+  struct grub_txt_os_sinit_data *os_sinit_data;
+
+  os_sinit_data = grub_txt_os_sinit_data_start (grub_txt_get_heap ());
+  os_sinit_data->mle_hdr_base = slparams->mle_header_offset = mle_header_offset;
+
+  grub_txt_boot_finalize (slparams);
+
+  /* Re-enable SMX mode */
+  grub_write_cr4 (grub_read_cr4 () | GRUB_CR4_X86_SMXE);
+
+  dl_entry ((unsigned long) bl_context);
+}

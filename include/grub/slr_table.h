@@ -107,10 +107,13 @@ struct grub_slr_bl_context
   grub_uint64_t context;
 } GRUB_PACKED;
 
+extern void grub_slaunch_callback (struct grub_slr_bl_context *bl_context,
+                                   grub_size_t mle_header_offset);
 /*
  * Dynamic Launch Callback Function type
  */
-typedef void (*grub_dl_handler_func)(struct grub_slr_bl_context *bl_context);
+typedef void (*grub_dl_handler_func)(struct grub_slr_bl_context *bl_context,
+                                     grub_size_t mle_header_offset);
 
 /*
  * DRTM Dynamic Launch Configuration

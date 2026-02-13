@@ -662,22 +662,15 @@ grub_linux_boot (void)
 
   if (grub_slaunch_platform_type () == SLP_INTEL_TXT)
     {
-      struct grub_slr_table *slrt = (struct grub_slr_table *)slparams.slr_table_mem;
-      struct grub_slr_entry_dl_info *dlinfo;
-
       slparams.platform_type = grub_slaunch_platform_type();
 
       err = grub_txt_boot_prepare (&slparams);
       if (err != GRUB_ERR_NONE)
         return err;
 
-      grub_txt_boot_finalize (&slparams);
+      slparams.boot_params->slr_table_addr = slparams.slr_table_base;
 
-      dlinfo = grub_slr_next_entry_by_tag (slrt, NULL, GRUB_SLR_ENTRY_DL_INFO);
-      dl_entry ((unsigned long ) &dlinfo->bl_context);
-
-      /* If this returns, something failed miserably */
-      return GRUB_ERR_BAD_DEVICE;
+      /* fall through to ordinary handover */
     }
 
 #if defined (__x86_64__) && defined (GRUB_MACHINE_EFI)
@@ -879,9 +872,6 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
     }
 
   /* Read the kernel_info struct. */
-  if (grub_sl_find_kernel_info (&slparams, file, &lh, real_size))
-    goto fail;
-
   linux_params.code32_start = prot_mode_target + lh.code32_start - GRUB_LINUX_BZIMAGE_ADDR;
   linux_params.kernel_alignment = (1 << align);
   linux_params.ps_mouse = linux_params.padding11 = 0;

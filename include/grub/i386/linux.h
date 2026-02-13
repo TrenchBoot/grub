@@ -238,9 +238,7 @@ struct linux_kernel_params
   grub_uint32_t ist_event;		/* 68 */
   grub_uint32_t ist_perf_level;		/* 6c */
   grub_uint64_t acpi_rsdp_addr;		/* 70 */
-
-  grub_uint8_t padding5[0x80 - 0x78];
-
+  grub_uint64_t slr_table_addr;		/* 78 */
   grub_uint8_t hd0_drive_info[0x10];	/* 80 */
   grub_uint8_t hd1_drive_info[0x10];	/* 90 */
   grub_uint16_t rom_config_len;		/* a0 */
