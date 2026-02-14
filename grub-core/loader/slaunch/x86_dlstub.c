@@ -35,8 +35,8 @@ extern void dl_trampoline(grub_uint32_t dce_base, grub_uint32_t dce_size);
 
 void dl_entry (grub_uint64_t dl_ctx)
 {
-  struct grub_slr_bl_context *bl_ctx = (struct grub_slr_bl_context *)dl_ctx;
-  struct grub_slaunch_params *slparams = (struct grub_slaunch_params *)bl_ctx->context;
+  struct grub_slr_bl_context *bl_ctx = (void *)(unsigned long) dl_ctx;
+  struct grub_slaunch_params *slparams = (void *)(unsigned long) bl_ctx->context;
   struct grub_relocator32_state state;
   grub_err_t err;
 
@@ -47,7 +47,7 @@ void dl_entry (grub_uint64_t dl_ctx)
       if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
         grub_update_slrt_policy (slparams);
 
-      err = grub_set_mtrrs_for_acmod ((void *)slparams->dce_base);
+      err = grub_set_mtrrs_for_acmod ((void *)(unsigned long) slparams->dce_base);
       if (err)
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("setting MTRRs for TXT SINIT failed"));

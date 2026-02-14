@@ -1862,15 +1862,15 @@ module = {
 
 module = {
   name = slaunch;
-  x86 = loader/slaunch/slaunch.c;
-  x86 = loader/slaunch/slrt.c;
-  x86 = loader/slaunch/txt.c;
-  x86 = loader/slaunch/acmod.c;
-  x86 = loader/slaunch/verify.c;
-  x86 = loader/slaunch/i386_linux.c;
-  x86 = loader/slaunch/x86_efi_linux.c;
-  x86 = loader/slaunch/x86_dlstub.c;
-  x86 = loader/slaunch/x86_dltrampoline.S;
+  common = loader/slaunch/slaunch.c;
+  common = loader/slaunch/slrt.c;
+  common = loader/slaunch/txt.c;
+  common = loader/slaunch/acmod.c;
+  common = loader/slaunch/verify.c;
+  common = loader/slaunch/i386_linux.c;
+  common = loader/slaunch/x86_dlstub.c;
+  common = loader/slaunch/x86_dltrampoline.S;
+  x86_64_efi = loader/slaunch/x86_efi_linux.c;
   enable = x86;
 };
 
