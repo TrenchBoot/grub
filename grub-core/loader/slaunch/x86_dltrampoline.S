@@ -40,32 +40,35 @@ dl_entry_trampoline:
 
 	.globl	dl_trampoline
 dl_trampoline:
-	cli
-	leaq	dl_gdt_base(%rip), %rax
-	leaq	dl_gdt(%rip), %rbx
-	movl	%ebx, (%eax)
-	lgdt	dl_gdtr(%rip)
-
-	/* Setup target to ret to compat mode */
-	leal	1f(%rip), %ecx
-	pushq	$CS_SEL32
-	pushq	%rcx
-	lretq
+	call	dl_enter_compat_mode
 
 	.code32
-1:	/* Now in IA-32e compatibility mode load data segments and do senter */
-	movw	$DS_SEL, %ax
-	movw	%ax, %ds
-	movw	%ax, %es
-	movw	%ax, %ss
-	movw	%ax, %fs
-	movw	%ax, %gs
-
 	movl	$GRUB_SMX_LEAF_SENTER, %eax
 	movl	%edi, %ebx
 	movl	%esi, %ecx
 	xorl	%edx, %edx
 	getsec
+
+	.code64
+dl_enter_compat_mode:
+	cli
+	leaq	dl_gdt(%rip), %r8
+	pushq	%r8
+	pushw	$(dl_gdt_end - dl_gdt - 1)
+	lgdt	(%rsp)
+	addq	$10, %rsp
+
+	movw	$DS_SEL, %r8w
+	movw	%r8w, %ds
+	movw	%r8w, %es
+	movw	%r8w, %ss
+	movw	%r8w, %fs
+	movw	%r8w, %gs
+
+	/* Setup target to ret to compat mode */
+	pushq	(%rsp)
+	movq	$CS_SEL32, 8(%rsp)
+	lretq
 
 	.align 8
 dl_gdt:
@@ -85,10 +88,4 @@ dl_gdt:
 	.byte	0x93   /* P=1 DPL=0 S=1 Type=0010 C=0 W=1 A=1 */
 	.byte	0xcf   /* G=1 D=1 L=0 AVL=0 Limit 2 */
 	.byte	0x00   /* Base 3 */
-
-	.word	0
-dl_gdtr:
-	.word	23 /* Limit */
-dl_gdt_base:
-	.long	0  /* Base */
-	.long	0
+dl_gdt_end:
