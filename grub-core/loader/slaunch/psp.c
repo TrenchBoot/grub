@@ -55,7 +55,8 @@ typedef enum
   PSP_NONE = 0,
   PSP_V1,
   PSP_V2,
-  PSP_V3
+  PSP_V3,
+  ASP,
 } psp_version_t;
 
 struct pci_psp_device
@@ -73,7 +74,8 @@ static const struct pci_psp_device psp_devs_list[] = {
   {0x1022, 0x15DF, PSP_V3},
   {0x1022, 0x1649, PSP_V2},
   {0x1022, 0x14CA, PSP_V3},
-  {0x1022, 0x15C7, PSP_NONE}
+  {0x1022, 0x15C7, PSP_V3},
+  {0x1022, 0x156E, ASP},
 };
 
 static psp_version_t psp_version;
@@ -273,6 +275,7 @@ init_drtm_interface (grub_addr_t base_addr, psp_version_t version)
     {
     case PSP_V2:
     case PSP_V3:
+    case ASP:
       psp_drtm.c2pmsg_72 = (volatile grub_uint32_t *)(base_addr + 0x10a20);
       psp_drtm.c2pmsg_93 = (volatile grub_uint32_t *)(base_addr + 0x10a74);
       psp_drtm.c2pmsg_94 = (volatile grub_uint32_t *)(base_addr + 0x10a78);
