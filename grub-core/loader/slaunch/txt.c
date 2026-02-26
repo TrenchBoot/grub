@@ -1085,9 +1085,6 @@ grub_txt_boot_prepare (struct grub_slaunch_params *slparams)
   grub_setup_slr_table (slparams, (struct grub_slr_entry_hdr *)&slr_intel_info_staging);
   set_txt_info_ptr (slparams, os_mle_data);
 
-  grub_tpm_relinquish_locality (0);
-  grub_dprintf ("slaunch", "Relinquished TPM locality 0\n");
-
   grub_dprintf ("slaunch", "CPU prepared for secure launch\n");
 
   if (!(grub_rdmsr (GRUB_MSR_X86_APICBASE) & GRUB_MSR_X86_APICBASE_BSP))

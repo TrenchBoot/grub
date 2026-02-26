@@ -52,6 +52,8 @@ void dl_entry (grub_uint64_t dl_ctx)
 
   if (slparams->platform_type == SLP_INTEL_TXT)
     {
+      grub_tpm_relinquish_locality (0);
+
       err = grub_set_mtrrs_for_acmod ((void *)(grub_addr_t)slparams->dce_base);
       if (err)
         {
