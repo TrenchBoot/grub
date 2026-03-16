@@ -81,9 +81,9 @@ static struct {
 
 static grub_efi_status_t __grub_efi_api
 grub_slaunch_set_image (struct grub_slaunch_protocol *,
-                        struct linux_kernel_params *boot_params,
-			grub_uint64_t base,
-			grub_uint32_t header_offset)
+			grub_uint64_t dlme_base,
+			grub_uint64_t dlme_header_offset,
+			grub_uint64_t dlme_table)
 {
   struct grub_slaunch_params *slparams = slaunch_protocol.slparams;
   struct grub_txt_mle_header *mle_header;
@@ -94,19 +94,19 @@ grub_slaunch_set_image (struct grub_slaunch_protocol *,
   grub_err_t err;
   void *addr;
 
-  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (base + header_offset);
+  mle_header = (struct grub_txt_mle_header *)(grub_addr_t) (dlme_base + dlme_header_offset);
 
-  slparams->mle_start = base;
+  slparams->mle_start = dlme_base;
   slparams->mle_size = mle_header->mle_end;
-  slparams->mle_header_offset = header_offset;
+  slparams->mle_header_offset = dlme_header_offset;
 
-  slparams->boot_params = boot_params;
-  slparams->boot_params_base = (unsigned long) boot_params;
+  slparams->boot_params = (struct linux_kernel_params *) dlme_table;;
+  slparams->boot_params_base = (unsigned long) dlme_table;
 
   /* Allocate page tables for TXT just in front of the kernel image */
   slparams->mle_ptab_size = grub_txt_get_mle_ptab_size (slparams->mle_size);
   slparams->mle_ptab_size = ALIGN_UP (slparams->mle_ptab_size, GRUB_TXT_PMR_ALIGN);
-  requested = ALIGN_DOWN ((base - slparams->mle_ptab_size), GRUB_TXT_PMR_ALIGN);
+  requested = ALIGN_DOWN ((dlme_base - slparams->mle_ptab_size), GRUB_TXT_PMR_ALIGN);
 
   addr = grub_efi_allocate_pages_real (requested,
                                        GRUB_EFI_BYTES_TO_PAGES(slparams->mle_ptab_size),
@@ -183,7 +183,7 @@ grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams,
   slparams->boot_type = GRUB_SL_BOOT_TYPE_EFI;
   slparams->platform_type = grub_slaunch_platform_type ();
 
-  slaunch_protocol.protocol.set_image = grub_slaunch_set_image;
+  slaunch_protocol.protocol.setup_dlem = grub_slaunch_set_image;
   slaunch_protocol.protocol.launch = grub_slaunch_launch;
   slaunch_protocol.slparams = slparams;
 

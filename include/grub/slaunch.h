@@ -124,11 +124,10 @@ grub_err_t grub_sl_efi_txt_setup (struct grub_slaunch_params *slparams,
 
 struct grub_slaunch_protocol {
   grub_efi_status_t
-  (__grub_efi_api *set_image)(struct grub_slaunch_protocol *this,
-                              struct linux_kernel_params *boot_params,
-                              grub_uint64_t base,
-                              grub_uint32_t header_offset);
-
+  (__grub_efi_api *setup_dlem)(struct grub_slaunch_protocol *this,
+			       grub_uint64_t dlme_base,
+			       grub_uint64_t dlme_header_offset,
+			       grub_uint64_t dlme_table);
   grub_efi_status_t
   (__grub_efi_api *launch)(struct grub_slaunch_protocol *this);
 };

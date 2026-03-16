@@ -165,6 +165,8 @@ grub_setup_slrt_dl_info (struct grub_slaunch_params *slparams)
   slr_dl_info_staging.dlme_size = slparams->mle_size;
   slr_dl_info_staging.dlme_base = slparams->mle_start;
   slr_dl_info_staging.dlme_entry = slparams->mle_entry;
+  slr_dl_info_staging.dlme_header_offset = slparams->mle_header_offset;
+  slr_dl_info_staging.dlme_config_table = slparams->boot_params_base;
   slr_dl_info_staging.dce_base = slparams->dce_base;
   slr_dl_info_staging.dce_size = slparams->dce_size;
 }

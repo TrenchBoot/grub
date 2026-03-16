@@ -126,6 +126,8 @@ struct grub_slr_entry_dl_info
   grub_uint64_t dlme_size;
   grub_uint64_t dlme_base;
   grub_uint64_t dlme_entry;
+  grub_uint64_t dlme_header_offset;
+  grub_uint64_t dlme_config_table;
   struct grub_slr_bl_context bl_context;
   grub_uint64_t dl_handler;
 } GRUB_PACKED;
