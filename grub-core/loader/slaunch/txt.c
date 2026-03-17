@@ -945,13 +945,14 @@ void grub_txt_boot_finalize (struct grub_slaunch_params *slparams)
 }
 
 void grub_slaunch_callback (struct grub_slr_bl_context *bl_context,
-                            grub_size_t mle_header_offset)
+                            struct grub_slr_setup_dlme *setup_dlme)
 {
   struct grub_slaunch_params *slparams = (void *)(unsigned long) bl_context->context;
   struct grub_txt_os_sinit_data *os_sinit_data;
 
   os_sinit_data = grub_txt_os_sinit_data_start (grub_txt_get_heap ());
-  os_sinit_data->mle_hdr_base = slparams->mle_header_offset = mle_header_offset;
+  os_sinit_data->mle_hdr_base = slparams->mle_header_offset = setup_dlme->dlme_header_offset;
+  slparams->mle_start = setup_dlme->dlme_base;
 
   grub_txt_boot_finalize (slparams);
 

@@ -98,7 +98,7 @@ struct grub_slr_entry_hdr
 } GRUB_PACKED;
 
 /*
- * Boot loader context
+ * Boot loader context and DLME setup
  */
 struct grub_slr_bl_context
 {
@@ -107,13 +107,21 @@ struct grub_slr_bl_context
   grub_uint64_t context;
 } GRUB_PACKED;
 
-extern void grub_slaunch_callback (struct grub_slr_bl_context *bl_context,
-                                   grub_size_t mle_header_offset);
+struct grub_slr_setup_dlme
+{
+  grub_uint64_t dlme_base;
+  grub_uint64_t dlme_header_offset;
+  grub_uint64_t dlme_table;
+} GRUB_PACKED;
+
 /*
  * Dynamic Launch Callback Function type
  */
-typedef void (*grub_dl_handler_func)(struct grub_slr_bl_context *bl_context,
-                                     grub_size_t mle_header_offset);
+typedef void (*dl_launch_func)(struct grub_slr_bl_context *bl_context,
+                               struct grub_slr_setup_dlme *setup_dlme);
+
+extern void grub_slaunch_callback (struct grub_slr_bl_context *bl_context,
+                                   struct grub_slr_setup_dlme *setup_dlme);
 
 /*
  * DRTM Dynamic Launch Configuration
@@ -129,7 +137,7 @@ struct grub_slr_entry_dl_info
   grub_uint64_t dlme_header_offset;
   grub_uint64_t dlme_config_table;
   struct grub_slr_bl_context bl_context;
-  grub_uint64_t dl_handler;
+  grub_uint64_t dl_launch;
 } GRUB_PACKED;
 
 /*

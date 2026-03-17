@@ -161,7 +161,7 @@ grub_setup_slrt_dl_info (struct grub_slaunch_params *slparams)
   /* Setup DL entry point, DCE and DLME information */
   slr_dl_info_staging.bl_context.bootloader = GRUB_SLR_BOOTLOADER_GRUB;
   slr_dl_info_staging.bl_context.context = (unsigned long) slparams;
-  slr_dl_info_staging.dl_handler = (unsigned long) dl_entry_trampoline;
+  slr_dl_info_staging.dl_launch = (unsigned long) dl_entry_trampoline;
   slr_dl_info_staging.dlme_size = slparams->mle_size;
   slr_dl_info_staging.dlme_base = slparams->mle_start;
   slr_dl_info_staging.dlme_entry = slparams->mle_entry;
