@@ -1,0 +1,159 @@
+name: Build the last successful automatic rebase of tb-dev-qubes branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >
+          Set this input to do a dry run without building the packages to test
+          the rebase.
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 0 * * 6'
+
+concurrency:
+  group: automatic-rebase
+
+jobs:
+  prep-rebase:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout qubes-grub2
+        uses: actions/checkout@v6
+        with:
+          repository: QubesOS/qubes-grub2
+          path: qubes-grub2
+      - name: Checkout downstream grub repository
+        uses: actions/checkout@v6
+        with:
+          repository: TrenchBoot/grub
+          token: ${{ secrets.TRENCHBOOT_REBASE_TOKEN }}
+          path: grub
+      - name: Read upstream version from qubes-grub2
+        id: version
+        working-directory: qubes-grub2
+        run: echo "version=$(cat version)" >> "$GITHUB_OUTPUT"
+      - name: Add upstream remote and fetch version tag
+        working-directory: grub
+        env:
+          UPSTREAM_TAG: grub-${{ steps.version.outputs.version }}
+        run: |
+          git remote add upstream https://gitlab.freedesktop.org/gnu-grub/grub.git
+          git fetch upstream "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"
+      - name: Apply qubes-grub2 patches on top of upstream tag
+        working-directory: grub
+        env:
+          UPSTREAM_TAG: grub-${{ steps.version.outputs.version }}
+        run: |
+          git checkout -b qubes-grub2-with-patches-rebase-prep "$UPSTREAM_TAG"
+          SPEC="../qubes-grub2/grub2.spec.in"
+          mapfile -t PATCHES < <(grep -E '^Patch[0-9]+:' "$SPEC" | awk '{print $2}')
+          for patch_file in "${PATCHES[@]}"; do
+            git apply "../qubes-grub2/${patch_file}"
+            escaped=$(printf '%s' "$patch_file" | sed 's/\./\\./g')
+            sed -i "/^Patch[0-9]*:[[:space:]]*${escaped}[[:space:]]*$/d" "$SPEC"
+            rm -f "../qubes-grub2/${patch_file}"
+          done
+      - name: Copy QubesOS RPM files to downstream repository
+        run: |
+          cp -r qubes-grub2/* grub/
+          cd grub
+          git add -A
+          GIT_AUTHOR_NAME="github-actions[bot]" \
+          GIT_AUTHOR_EMAIL="github-actions[bot]@users.noreply.github.com" \
+          GIT_AUTHOR_DATE="2024-01-01T00:00:00" \
+          GIT_COMMITTER_NAME="github-actions[bot]" \
+          GIT_COMMITTER_EMAIL="github-actions[bot]@users.noreply.github.com" \
+          GIT_COMMITTER_DATE="2024-01-01T00:00:00" \
+          git commit --no-gpg-sign -m "Do not rebase: QubesOS patches, QubesOS RPM files and Qubes builder metadata"
+      - name: Push qubes-grub2-with-patches branch to downstream
+        working-directory: grub
+        run: git push origin qubes-grub2-with-patches-rebase-prep
+  count-skip-commits:
+    needs: prep-rebase
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip-commits: ${{ steps.count.outputs.skip-commits }}
+    steps:
+      - name: Checkout tb-dev-qubes branch
+        uses: actions/checkout@v6
+        with:
+          repository: TrenchBoot/grub
+          ref: tb-dev-qubes
+          fetch-depth: 0
+      - name: Fetch qubes-grub2-with-patches-rebase-prep branch
+        run: git fetch origin qubes-grub2-with-patches-rebase-prep
+      - name: Count commits with "Do not rebase:" after merge-base with qubes-grub2-with-patches-rebase-prep
+        id: count
+        run: |
+          count=$(git rev-list --count --grep='Do not rebase:' origin/qubes-grub2-with-patches-rebase-prep..HEAD)
+          echo "skip-commits=${count}" >> "$GITHUB_OUTPUT"
+  try-rebase:
+    needs: count-skip-commits
+    uses: TrenchBoot/.github/.github/workflows/rebase.yml@v2
+    secrets:
+      first-remote-token: ${{secrets.TRENCHBOOT_REBASE_TOKEN}}
+    permissions:
+      # For creation/deletion/pushing to branches and creating PRs
+      contents: write
+    with:
+      downstream-repo: 'https://github.com/TrenchBoot/grub.git'
+      downstream-branch: 'tb-dev-qubes'
+      upstream-repo: 'https://github.com/TrenchBoot/grub.git'
+      upstream-branch: 'qubes-grub2-with-patches-rebase-prep'
+      commit-user-name: 'github-actions[bot]'
+      commit-user-email: 'github-actions[bot]@users.noreply.github.com'
+      cicd-trigger-resume: '7. Rerun all jobs for the workflow https://github.com/TrenchBoot/grub/actions/runs/${{ github.run_id }} to resume automated rebase.'
+      skip-commits: ${{ needs.count-skip-commits.outputs.skip-commits }}
+      additional-params: '--use-commit-as-base'
+  cleanup-after-rebase-attempt:
+    needs: try-rebase
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout downstream grub repository
+        uses: actions/checkout@v6
+        with:
+          repository: TrenchBoot/grub
+          token: ${{ secrets.TRENCHBOOT_REBASE_TOKEN }}
+          path: grub
+      - name: Delete qubes-grub2-with-patches branch from downstream
+        working-directory: grub
+        env:
+          TOKEN: ${{ secrets.TRENCHBOOT_REBASE_TOKEN }}
+        run: |
+          git push "https://${TOKEN}@github.com/TrenchBoot/grub.git" \
+            --delete qubes-grub2-with-patches-rebase-prep
+  get-version:
+    runs-on: ubuntu-latest
+    needs: try-rebase
+    if: ${{ needs.try-rebase.outputs.rebase-exit-code == '0' && ! inputs.dry_run }}
+    outputs:
+      version: ${{ steps.read-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 'tb-dev-qubes-rebased'
+      - name: Read version of the QubesOS Component from version file
+        id: read-version
+        # The tb-dev-qubes-rebased should already have the version file either created
+        # in the prep-rebase or try-rebase jobs (it will be probably created by
+        # the prep-rebase as this file is a part of QubesOS repository) on which
+        # it depennds:
+        run: echo "version=$(cat version)" >> "$GITHUB_OUTPUT"
+  qubes-dom0-package:
+    needs: get-version
+    uses: TrenchBoot/.github/.github/workflows/qubes-dom0-packagev2.yml@v2
+    with:
+      qubes-component: 'grub2'
+      qubes-component-branch: 'tb-dev-qubes-rebased'
+      qubes-pkg-src-dir: '.'
+      qubes-pkg-version: ${{ needs.get-version.outputs.version }}
