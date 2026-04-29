@@ -6,7 +6,8 @@ on:
       - 'intel-txt-aem*'
       - 'xen-uefi'
     tags:
-      - '*'
+      - '**'
+      - '!v*-rc*'
 
 jobs:
   qubes-dom0-package:
