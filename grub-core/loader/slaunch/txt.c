@@ -359,8 +359,9 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
   /* Map all AC module pages as mem_type */
   num_pages = GRUB_PAGE_UP(size) >> GRUB_PAGE_SHIFT;
 
-  grub_dprintf ("slaunch", "setting MTRRs for acmod: base=%p, size=%x, num_pages=%d\n",
-           base, size, num_pages);
+  // TODO cannot print after EBS - console has been shutdown with causes hangs
+  //grub_dprintf ("slaunch", "setting MTRRs for acmod: base=%p, size=%x, num_pages=%d\n",
+    //       base, size, num_pages);
 
   /* Each VAR MTRR base must be a multiple if that MTRR's Size */
   base_v = (unsigned long)base;
@@ -376,7 +377,7 @@ set_mtrr_mem_type (const grub_uint8_t *base, grub_uint32_t size,
   for (j = i - 12; j > 0; j--)
      mtrr_s = mtrr_s*2; /* mtrr_s = mtrr_s << 1 */
 
-  grub_dprintf ("slaunch", "The maximum allowed MTRR range size=%d Pages \n", mtrr_s);
+  //grub_dprintf ("slaunch", "The maximum allowed MTRR range size=%d Pages \n", mtrr_s);
 
   ndx = 0;
 
@@ -524,6 +525,7 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
   struct grub_txt_os_mle_data *os_mle_data;
   struct grub_txt_os_sinit_data *os_sinit_data;
   struct grub_txt_heap_end_element *heap_end_element;
+  struct grub_txt_heap_tpm_event_log_element *heap_tpm_event_log_element;
   struct grub_txt_heap_event_log_pointer2_1_element *heap_event_log_pointer2_1_element;
 #ifdef GRUB_MACHINE_EFI
   struct grub_acpi_rsdp_v20 *rsdp;
@@ -650,7 +652,26 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
     os_sinit_data->capabilities |= GRUB_TXT_CAPS_ECX_PT_SUPPORT;
 
   if (grub_get_tpm_ver () == GRUB_TPM_12)
-    return grub_error (GRUB_ERR_BAD_DEVICE, N_("TPM 1.2 is not supported"));
+    {
+      grub_dprintf ("slaunch", "TPM 1.2 detected\n");
+      grub_dprintf ("slaunch", "Setting up TXT HEAP TPM event log element\n");
+
+      os_sinit_data->flags = GRUB_TXT_PCR_EXT_MAX_PERF_POLICY;
+      os_sinit_data->version = OS_SINIT_DATA_TPM_12_VER;
+
+      heap_tpm_event_log_element =
+	(struct grub_txt_heap_tpm_event_log_element *) os_sinit_data->ext_data_elts;
+
+      heap_tpm_event_log_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_TPM_EVENT_LOG_PTR;
+      heap_tpm_event_log_element->size = sizeof (*heap_tpm_event_log_element);
+      heap_tpm_event_log_element->event_log_phys_addr = slparams->tpm_evt_log_base;
+
+      /* TODO: reintroduce the ELT helper function */
+      heap_end_element = (struct grub_txt_heap_end_element *)
+	((grub_addr_t) heap_tpm_event_log_element + heap_tpm_event_log_element->size);
+      heap_end_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_END;
+      heap_end_element->size = sizeof (*heap_end_element);
+    }
   else
     {
       if (!(sinit_caps & GRUB_TXT_CAPS_TPM_20_EVTLOG_SUPPORT))
@@ -676,7 +697,6 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
       heap_event_log_pointer2_1_element->phys_addr = (grub_addr_t) &os_mle_data->event_log_buffer;
       heap_event_log_pointer2_1_element->allocated_event_container_size = sizeof (os_mle_data->event_log_buffer);
 #endif
-
       heap_end_element = (struct grub_txt_heap_end_element *)
 	((grub_addr_t) heap_event_log_pointer2_1_element + heap_event_log_pointer2_1_element->size);
       heap_end_element->type = GRUB_TXT_HEAP_EXTDATA_TYPE_END;
@@ -689,6 +709,32 @@ init_txt_heap (struct grub_slaunch_params *slparams, struct grub_txt_acm_header 
    */
 
   return GRUB_ERR_NONE;
+}
+
+void
+grub_txt_init_tpm_event_log (void *buf, grub_size_t size)
+{
+  struct grub_txt_event_log_container *elog;
+
+  if (buf == NULL || size == 0)
+    return;
+
+  /* For TPM 2.0 just clear the area, only TPM 1.2 requires initialization. */
+  grub_memset (buf, 0, size);
+
+  if (grub_get_tpm_ver () != GRUB_TPM_12)
+    return;
+
+  elog = (struct grub_txt_event_log_container *) buf;
+
+  grub_memcpy ((void *) elog->signature, EVTLOG_SIGNATURE, sizeof (elog->signature));
+  elog->container_ver_major = EVTLOG_CNTNR_MAJOR_VER;
+  elog->container_ver_minor = EVTLOG_CNTNR_MINOR_VER;
+  elog->pcr_event_ver_major = EVTLOG_EVT_MAJOR_VER;
+  elog->pcr_event_ver_minor = EVTLOG_EVT_MINOR_VER;
+  elog->size = size;
+  elog->pcr_events_offset = sizeof (*elog);
+  elog->next_event_offset = sizeof (*elog);
 }
 
 /*

@@ -65,6 +65,8 @@ sl_efi_txt_setup_slmem (struct grub_slaunch_params *slparams,
   slparams->tpm_evt_log_base = (unsigned long) slmem + GRUB_EFI_PAGE_SIZE;
   slparams->tpm_evt_log_size = GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE;
 
+  grub_txt_init_tpm_event_log ((void *)slparams->tpm_evt_log_base, slparams->tpm_evt_log_size);
+
   slparams->ap_wake_block = (unsigned long) slmem + GRUB_EFI_PAGE_SIZE + GRUB_EFI_SLAUNCH_TPM_EVT_LOG_SIZE;
   slparams->ap_wake_block_size = GRUB_EFI_MLE_AP_WAKE_BLOCK_SIZE;
 

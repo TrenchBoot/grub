@@ -645,6 +645,26 @@ grub_txt_getsec_parameters (grub_uint32_t index, grub_uint32_t *eax_out,
                         : "0" (GRUB_SMX_LEAF_PARAMETERS), "1" (index));
 }
 
+#define EVTLOG_SIGNATURE "TXT Event Container"
+#define EVTLOG_CNTNR_MAJOR_VER 1
+#define EVTLOG_CNTNR_MINOR_VER 0
+#define EVTLOG_EVT_MAJOR_VER 1
+#define EVTLOG_EVT_MINOR_VER 0
+
+struct grub_txt_event_log_container
+{
+    grub_uint8_t signature[20];
+    grub_uint8_t reserved[12];
+    grub_uint8_t container_ver_major;
+    grub_uint8_t container_ver_minor;
+    grub_uint8_t pcr_event_ver_major;
+    grub_uint8_t pcr_event_ver_minor;
+    grub_uint32_t size;
+    grub_uint32_t pcr_events_offset;
+    grub_uint32_t next_event_offset;
+    // pcr_events[];
+} GRUB_PACKED;
+
 extern grub_uint32_t grub_txt_supported_os_sinit_data_ver (struct grub_txt_acm_header* hdr);
 
 extern grub_uint32_t grub_txt_get_sinit_capabilities (struct grub_txt_acm_header* hdr);
@@ -658,6 +678,8 @@ extern struct grub_txt_acm_header* grub_txt_sinit_select (struct grub_txt_acm_he
 extern grub_err_t grub_txt_verify_platform (void);
 extern grub_err_t grub_txt_prepare_cpu (void);
 extern grub_err_t grub_set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr);
+
+extern void grub_txt_init_tpm_event_log (void *buf, grub_size_t size);
 
 extern grub_uint32_t grub_txt_get_mle_ptab_size (grub_uint32_t mle_size);
 extern void grub_txt_setup_mle_ptab (struct grub_slaunch_params *slparams);
