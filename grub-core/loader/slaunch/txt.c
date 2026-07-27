@@ -424,7 +424,7 @@ set_mtrr_mem_type (struct grub_txt_acm_header *sinit, grub_uint32_t mem_type)
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSBASE0 + ndx*2, mtrr_physbase.raw);
 
       mtrr_physmask.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + ndx*2);
-      mtrr_physmask.mask = ~(mtrr_s - 1) & mtrr_shifted_mask;
+      mtrr_physmask.mask = ~((grub_uint64_t) mtrr_s - 1) & mtrr_shifted_mask;
       mtrr_physmask.v = 1;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + ndx*2, mtrr_physmask.raw);
 
@@ -453,7 +453,7 @@ set_mtrr_mem_type (struct grub_txt_acm_header *sinit, grub_uint32_t mem_type)
       pages_in_range = 1 << (fls (num_pages) - 1);
 
       mtrr_physmask.raw = grub_rdmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + ndx*2);
-      mtrr_physmask.mask = ~(pages_in_range - 1) & mtrr_shifted_mask;
+      mtrr_physmask.mask = ~((grub_uint64_t) pages_in_range - 1) & mtrr_shifted_mask;
       mtrr_physmask.v = 1;
       grub_wrmsr (GRUB_MSR_X86_MTRR_PHYSMASK0 + ndx*2, mtrr_physmask.raw);
 
