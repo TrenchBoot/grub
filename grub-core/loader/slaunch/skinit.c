@@ -116,7 +116,11 @@ grub_skinit_prepare_cpu (void)
   return GRUB_ERR_NONE;
 }
 
-/* Highest end address of any descriptor in an EFI memory map. */
+/*
+ * Highest end address of any system memory descriptor in an EFI memory map.
+ * MMIO ranges are skipped: the TMR protects DRAM, and a PCIe configuration
+ * space window sits far above it, at 0x3FFB00000000 on EPYC 9005 boards.
+ */
 grub_uint64_t
 grub_skinit_efi_mmap_end (grub_addr_t map, grub_size_t map_size, grub_size_t desc_size)
 {
@@ -130,6 +134,11 @@ grub_skinit_efi_mmap_end (grub_addr_t map, grub_size_t map_size, grub_size_t des
   for (; (grub_addr_t) desc + desc_size <= map_end;
        desc = (grub_efi_memory_descriptor_t *) ((char *) desc + desc_size))
     {
+      if (desc->type == GRUB_EFI_MEMORY_MAPPED_IO
+          || desc->type == GRUB_EFI_MEMORY_MAPPED_IO_PORT_SPACE
+          || desc->type == GRUB_EFI_PAL_CODE)
+        continue;
+
       desc_end = desc->physical_start + (desc->num_pages << 12);
       if (desc_end > end)
         end = desc_end;
@@ -184,6 +193,12 @@ mb2_mmap_end (grub_uint64_t mbi_base)
           for (; entry + mmap->entry_size <= entries_end; entry += mmap->entry_size)
             {
               struct multiboot_mmap_entry *e = (struct multiboot_mmap_entry *) entry;
+
+              /* The basic map marks MMIO as reserved, so only RAM types count. */
+              if (e->type != MULTIBOOT_MEMORY_AVAILABLE
+                  && e->type != MULTIBOOT_MEMORY_ACPI_RECLAIMABLE
+                  && e->type != MULTIBOOT_MEMORY_NVS)
+                continue;
 
               if (e->addr + e->len > tag_end)
                 tag_end = e->addr + e->len;
