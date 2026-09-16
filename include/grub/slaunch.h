@@ -67,6 +67,11 @@ struct grub_slaunch_params
   struct linux_kernel_params *boot_params;
   grub_uint64_t boot_params_base;
   void *efi_memmap_mem;
+  /*
+   * Highest end address in the EFI memory map, recorded before
+   * ExitBootServices. Sizes the PSP TMR on paths without Linux boot params.
+   */
+  grub_uint64_t psp_tmr_end;
   struct grub_relocator *relocator;
   grub_uint64_t slr_table_base;
   grub_uint32_t slr_table_size;

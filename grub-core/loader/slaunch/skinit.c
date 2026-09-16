@@ -47,6 +47,7 @@
 #include <grub/i386/linux.h>
 #include <grub/i386/psp.h>
 #include <grub/i386/skinit.h>
+#include <grub/multiboot2.h>
 
 grub_err_t
 grub_skinit_is_supported (void)
@@ -115,15 +116,126 @@ grub_skinit_prepare_cpu (void)
   return GRUB_ERR_NONE;
 }
 
-grub_err_t
-grub_skinit_psp_memory_protect (struct grub_slaunch_params *slparams)
+/* Highest end address of any descriptor in an EFI memory map. */
+grub_uint64_t
+grub_skinit_efi_mmap_end (grub_addr_t map, grub_size_t map_size, grub_size_t desc_size)
+{
+  grub_efi_memory_descriptor_t *desc = (grub_efi_memory_descriptor_t *) map;
+  grub_addr_t map_end = map + map_size;
+  grub_uint64_t end = 0, desc_end;
+
+  if (map == 0 || desc_size < sizeof (*desc))
+    return 0;
+
+  for (; (grub_addr_t) desc + desc_size <= map_end;
+       desc = (grub_efi_memory_descriptor_t *) ((char *) desc + desc_size))
+    {
+      desc_end = desc->physical_start + (desc->num_pages << 12);
+      if (desc_end > end)
+        end = desc_end;
+    }
+
+  return end;
+}
+
+/*
+ * Highest end address in the memory map tags of a finished Multiboot2
+ * information structure. The EFI memory map tag is written after
+ * ExitBootServices, so it is present on EFI and the basic map on legacy BIOS.
+ */
+static grub_uint64_t
+mb2_mmap_end (grub_uint64_t mbi_base)
+{
+  grub_addr_t mbi = (grub_addr_t) mbi_base;
+  grub_addr_t mbi_end;
+  struct multiboot_tag *tag;
+  grub_uint64_t end = 0, tag_end;
+
+  if (mbi == 0)
+    return 0;
+
+  mbi_end = mbi + *(grub_uint32_t *) mbi;
+
+  for (tag = (struct multiboot_tag *) (mbi + 2 * sizeof (grub_uint32_t));
+       (grub_addr_t) tag + sizeof (*tag) <= mbi_end
+       && tag->type != MULTIBOOT_TAG_TYPE_END;
+       tag = (struct multiboot_tag *) ((grub_addr_t) tag
+                                       + ALIGN_UP (tag->size, MULTIBOOT_TAG_ALIGN)))
+    {
+      tag_end = 0;
+
+      if (tag->type == MULTIBOOT_TAG_TYPE_EFI_MMAP)
+        {
+          struct multiboot_tag_efi_mmap *efi = (struct multiboot_tag_efi_mmap *) tag;
+
+          tag_end = grub_skinit_efi_mmap_end ((grub_addr_t) efi->efi_mmap,
+                                              efi->size - sizeof (*efi),
+                                              efi->descr_size);
+        }
+      else if (tag->type == MULTIBOOT_TAG_TYPE_MMAP)
+        {
+          struct multiboot_tag_mmap *mmap = (struct multiboot_tag_mmap *) tag;
+          grub_addr_t entry = (grub_addr_t) mmap->entries;
+          grub_addr_t entries_end = (grub_addr_t) tag + tag->size;
+
+          if (mmap->entry_size < sizeof (struct multiboot_mmap_entry))
+            continue;
+
+          for (; entry + mmap->entry_size <= entries_end; entry += mmap->entry_size)
+            {
+              struct multiboot_mmap_entry *e = (struct multiboot_mmap_entry *) entry;
+
+              if (e->addr + e->len > tag_end)
+                tag_end = e->addr + e->len;
+            }
+        }
+
+      if (tag_end > end)
+        end = tag_end;
+    }
+
+  return end;
+}
+
+/*
+ * Highest end address in the e820 table of the Linux boot params, the map a
+ * legacy BIOS boot carries. The loader fills it before the DL stub runs.
+ */
+static grub_uint64_t
+boot_params_e820_end (struct linux_kernel_params *boot_params)
+{
+  grub_uint64_t end = 0;
+  unsigned int i;
+
+  for (i = 0; i < boot_params->mmap_size && i < ARRAY_SIZE (boot_params->e820_map); i++)
+    {
+      struct grub_e820_mmap *e = &boot_params->e820_map[i];
+
+      /* The firmware marks MMIO as reserved, so only RAM types count. */
+      if (e->type != GRUB_E820_RAM && e->type != GRUB_E820_ACPI
+          && e->type != GRUB_E820_NVS)
+        continue;
+
+      if (e->addr + e->size > end)
+        end = e->addr + e->size;
+    }
+
+  return end;
+}
+
+/*
+ * Highest end address in the memory map the Linux boot params carry: the EFI
+ * memory map on an EFI boot, the e820 table on a legacy BIOS boot.
+ */
+static grub_uint64_t
+boot_params_mmap_end (struct grub_slaunch_params *slparams)
 {
   struct linux_kernel_params *boot_params = slparams->boot_params;
-  grub_efi_memory_descriptor_t *memory_map_end;
-  grub_efi_memory_descriptor_t *desc;
   struct grub_efi_info *efi_info;
-  grub_uint64_t efi_memmap, hi_val, tmr_end = 0;
-  grub_err_t err;
+  grub_uint64_t efi_memmap, hi_val, end;
+
+  if (boot_params == NULL)
+    return 0;
 
   /* A bit of work to extract the v2.08 EFI info from the linux params */
   efi_info = (struct grub_efi_info *)((grub_uint8_t *)&(boot_params->v0208)
@@ -149,12 +261,41 @@ grub_skinit_psp_memory_protect (struct grub_slaunch_params *slparams)
       efi_memmap = (grub_uint64_t)(grub_addr_t)slparams->efi_memmap_mem;
     }
 
-  desc = (grub_efi_memory_descriptor_t *)(grub_addr_t) efi_memmap;
-  memory_map_end = (grub_efi_memory_descriptor_t *)(grub_addr_t) (efi_memmap + efi_info->efi_mmap_size);
-  for (; desc < memory_map_end; desc = (grub_efi_memory_descriptor_t *) ((char *) desc + efi_info->efi_mem_desc_size))
-    {
-      tmr_end = desc->physical_start + (desc->num_pages << 12);
-    }
+  end = grub_skinit_efi_mmap_end ((grub_addr_t) efi_memmap, efi_info->efi_mmap_size,
+                                  efi_info->efi_mem_desc_size);
+  if (end == 0)
+    end = boot_params_e820_end (boot_params);
+
+  return end;
+}
+
+grub_err_t
+grub_skinit_psp_memory_protect (struct grub_slaunch_params *slparams)
+{
+  grub_uint64_t tmr_end;
+  grub_err_t err;
+
+  /*
+   * The TMR has to cover every address the PSP may be asked about, the SKL
+   * included, so it runs from 0 to the top of the memory map. Which map is
+   * available depends on the boot path: Linux boots carry boot params, a
+   * Multiboot2 boot carries a finished MBI, and a chainloaded EFI image carries
+   * neither, so the top recorded before ExitBootServices is used there.
+   */
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_MB2)
+    tmr_end = mb2_mmap_end (slparams->boot_params_base);
+  else
+    tmr_end = boot_params_mmap_end (slparams);
+
+  if (tmr_end == 0)
+    tmr_end = slparams->psp_tmr_end;
+
+  if (tmr_end == 0)
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+                       N_("DRTM: no memory map to size the TMR from"));
+
+  grub_dprintf ("slaunch", "DRTM: TMR 0x0-0x%" PRIxGRUB_UINT64_T ", SKL at 0x%"
+                PRIxGRUB_UINT64_T "\n", tmr_end, slparams->dce_base);
 
   grub_drtm_kick_psp ();
 

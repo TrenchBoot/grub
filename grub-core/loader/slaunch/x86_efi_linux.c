@@ -375,6 +375,42 @@ fail:
   return err;
 }
 
+/*
+ * The PSP TMR is sized in the DL stub, after ExitBootServices, where a
+ * chainloaded image has no boot params to take the memory map from. Record
+ * the top of the map while boot services are still available.
+ */
+static grub_err_t
+sl_efi_record_memory_top (struct grub_slaunch_params *slparams)
+{
+  grub_efi_memory_descriptor_t *memory_map;
+  grub_efi_uintn_t memory_map_size, desc_size;
+  int ret;
+
+  memory_map_size = grub_efi_find_mmap_size ();
+
+  memory_map = grub_malloc (memory_map_size);
+  if (memory_map == NULL)
+    return grub_error (GRUB_ERR_OUT_OF_MEMORY, N_("out of memory"));
+
+  ret = grub_efi_get_memory_map (&memory_map_size, memory_map, NULL,
+                                 &desc_size, NULL);
+  if (ret < 1)
+    {
+      grub_free (memory_map);
+      return grub_error (GRUB_ERR_BAD_DEVICE, N_("cannot get EFI memory map"));
+    }
+
+  slparams->psp_tmr_end = grub_skinit_efi_mmap_end ((grub_addr_t) memory_map,
+                                                    memory_map_size, desc_size);
+  grub_free (memory_map);
+
+  grub_dprintf ("slaunch", "top of EFI memory map: 0x%" PRIxGRUB_UINT64_T "\n",
+                slparams->psp_tmr_end);
+
+  return GRUB_ERR_NONE;
+}
+
 grub_err_t
 grub_sl_efi_skinit_setup (struct grub_slaunch_params *slparams, void *kernel_addr,
                           grub_efi_loaded_image_t *loaded_image, bool is_linux)
@@ -398,6 +434,10 @@ grub_sl_efi_skinit_setup (struct grub_slaunch_params *slparams, void *kernel_add
 
       start = (lh->setup_sects + 1) * 512;
     }
+
+  err = sl_efi_record_memory_top (slparams);
+  if (err != GRUB_ERR_NONE)
+    return err;
 
   /* See comment in TXT setup function grub_sl_efi_txt_setup () */
   slparams->mle_start = image_base + start;

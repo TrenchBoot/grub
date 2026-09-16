@@ -62,6 +62,8 @@ extern grub_err_t grub_skl_prepare_bootloader_data (struct grub_slaunch_params *
 extern void grub_skl_link_amd_info (struct grub_slaunch_params *slparams);
 
 extern grub_err_t grub_skinit_is_supported (void);
+extern grub_uint64_t grub_skinit_efi_mmap_end (grub_addr_t map, grub_size_t map_size,
+                                               grub_size_t desc_size);
 extern grub_err_t grub_skinit_psp_memory_protect (struct grub_slaunch_params *slparams);
 extern grub_err_t grub_skinit_prepare_cpu (void);
 extern void grub_skinit_send_init_ipi_shorthand (void);
