@@ -120,12 +120,12 @@ sl_efi_load_mle_data (struct grub_slaunch_params *slparams,
         }
 
       mle_hdr_offset = grub_le_to_cpu32 (kernel_info.mle_header_offset);
-      mle_hdr = (struct grub_txt_mle_header *)((grub_addr_t)kernel_addr + slparams->mle_header_offset);
+      mle_hdr = (struct grub_txt_mle_header *)((grub_addr_t)kernel_addr + kernel_start + mle_hdr_offset);
 
-      if (!grub_memcmp (mle_hdr->uuid, GRUB_TXT_MLE_UUID, 16))
+      if (grub_memcmp (mle_hdr->uuid, GRUB_TXT_MLE_UUID, 16) != 0)
         {
-          grub_dprintf ("slaunch", "Not an MLE header at %llu\n",
-                        (unsigned long long)((grub_addr_t)kernel_addr + mle_hdr_offset));
+          grub_dprintf ("slaunch", "Not an MLE header at 0x%llx\n",
+                        (unsigned long long)(grub_addr_t)mle_hdr);
           return GRUB_ERR_BAD_OS;
         }
     }
