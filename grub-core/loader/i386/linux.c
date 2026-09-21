@@ -595,6 +595,13 @@ grub_linux_boot (void)
      return err;
     real_mode_mem = get_virtual_current_address (ch);
 
+    /*
+     * A dynamic launch measures the whole 4 KiB zero page, but
+     * linux_params fills less of it. Clear the chunk so the rest holds no
+     * stale data.
+     */
+    grub_memset (real_mode_mem, 0, sz);
+
     if (grub_slaunch_platform_type () != SLP_NONE)
       {
         slparams.boot_params = real_mode_mem;
