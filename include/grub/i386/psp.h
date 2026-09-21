@@ -82,6 +82,7 @@
 #define DRTM_CMD_READY			0
 #define DRTM_RESPONSE_READY		1
 
+extern int grub_psp_present (void);
 extern grub_err_t grub_psp_discover (void);
 extern grub_uint16_t grub_psp_version (void);
 extern void grub_drtm_kick_psp (void);

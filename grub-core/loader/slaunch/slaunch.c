@@ -29,6 +29,7 @@
 #include <grub/i386/mmio.h>
 #include <grub/i386/txt.h>
 #include <grub/i386/skinit.h>
+#include <grub/i386/psp.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -92,6 +93,9 @@ grub_cmd_slaunch (grub_command_t cmd __attribute__ ((unused)),
 	return err;
 
       slp = SLP_AMD_SKINIT;
+
+      /* Let grub.cfg pick the SKL build matching the platform. */
+      grub_env_set ("slaunch_psp", grub_psp_present () ? "1" : "0");
     }
   else
     return grub_error (GRUB_ERR_UNKNOWN_DEVICE, N_("CPU is unsupported"));

@@ -184,37 +184,54 @@ lookup_drtm_device (grub_uint16_t vendor_id, grub_uint16_t dev_id)
   return psp;
 }
 
-grub_err_t
-grub_psp_discover (void)
+/* Walk the PCI buses for a PSP with the DRTM service, reading only its IDs. */
+static const struct pci_psp_device *
+find_psp_device (grub_pci_device_t *dev)
 {
-  grub_pci_device_t dev;
   grub_pci_address_t addr;
   grub_uint16_t vendor_id, dev_id;
-  const struct pci_psp_device *psp = NULL;
-  grub_uint64_t bar2_addr = 0;
-  grub_err_t err;
+  const struct pci_psp_device *psp;
 
-  for (dev.bus = 0; dev.bus < GRUB_PCI_NUM_BUS; dev.bus++)
+  for (dev->bus = 0; dev->bus < GRUB_PCI_NUM_BUS; dev->bus++)
     {
-      for (dev.device = 0; dev.device < GRUB_PCI_NUM_DEVICES; dev.device++)
+      for (dev->device = 0; dev->device < GRUB_PCI_NUM_DEVICES; dev->device++)
         {
-          for (dev.function = 0; dev.function < GRUB_PCI_NUM_FUNCTIONS; dev.function++)
+          for (dev->function = 0; dev->function < GRUB_PCI_NUM_FUNCTIONS; dev->function++)
             {
-              addr = grub_pci_make_address (dev, 0);
+              addr = grub_pci_make_address (*dev, 0);
               vendor_id = grub_pci_read_word (addr);
-              addr = grub_pci_make_address (dev, 2);
+              addr = grub_pci_make_address (*dev, 2);
               dev_id = grub_pci_read_word (addr);
               psp = lookup_drtm_device (vendor_id, dev_id);
               if (psp)
-                goto psp_found;
+                return psp;
             }
         }
     }
 
+  return NULL;
+}
+
+int
+grub_psp_present (void)
+{
+  grub_pci_device_t dev;
+
+  return find_psp_device (&dev) != NULL;
+}
+
+grub_err_t
+grub_psp_discover (void)
+{
+  grub_pci_device_t dev;
+  const struct pci_psp_device *psp;
+  grub_uint64_t bar2_addr = 0;
+  grub_err_t err;
+
+  psp = find_psp_device (&dev);
   if (!psp)
     return grub_error (GRUB_ERR_BAD_DEVICE, N_("DRTM: failed to find PSP\n"));
 
-psp_found:
   init_drtm_device (dev);
 
   bar2_addr = get_psp_bar_addr();
