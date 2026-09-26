@@ -33,6 +33,10 @@
 #include <grub/i386/txt.h>
 #include <grub/i386/skinit.h>
 
+#ifdef GRUB_MACHINE_EFI
+#include <grub/efi/efi.h>
+#endif
+
 GRUB_MOD_LICENSE ("GPLv3+");
 
 extern void dl_trampoline(grub_uint32_t dce_base, grub_uint32_t dce_size, grub_uint32_t platform);
@@ -43,6 +47,15 @@ void dl_entry (grub_uint64_t dl_ctx)
   struct grub_slaunch_params *slparams = (struct grub_slaunch_params *)(grub_addr_t)bl_ctx->context;
   struct grub_relocator32_state state = {0};
   grub_err_t err;
+
+#ifdef GRUB_MACHINE_EFI
+  /*
+   * On the EFI boot path the OS calls here after it has exited the boot
+   * services, so the EFI console and memory services must not be used.
+   */
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
+    grub_efi_is_finished = 1;
+#endif
 
   state.edi = slparams->platform_type;
 
