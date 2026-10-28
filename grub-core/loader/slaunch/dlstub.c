@@ -65,6 +65,13 @@ void dl_entry (grub_uint64_t dl_ctx)
           grub_error (GRUB_ERR_BAD_DEVICE, N_("prepare CPU for TXT SENTER failed"));
           return;
         }
+
+      err = grub_txt_disable_vtd ();
+      if (err)
+        {
+          grub_error (GRUB_ERR_BAD_DEVICE, N_("disabling VT-d DMA remapping failed"));
+          return;
+        }
     }
   else if (slparams->platform_type == SLP_AMD_SKINIT)
     {

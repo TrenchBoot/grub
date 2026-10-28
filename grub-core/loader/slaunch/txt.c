@@ -62,6 +62,7 @@
 #include <grub/safemath.h>
 #include <grub/slr_table.h>
 #include <grub/slaunch.h>
+#include <grub/time.h>
 #include <grub/i386/cpuid.h>
 #include <grub/i386/msr.h>
 #include <grub/i386/mmio.h>
@@ -74,6 +75,44 @@
 #define OS_SINIT_DATA_TPM_20_VER	7
 
 #define OS_SINIT_DATA_MIN_VER		OS_SINIT_DATA_TPM_12_VER
+
+/* VT-d registers */
+#define VTD_GCMD_REG			0x18
+#define VTD_GSTS_REG			0x1c
+#define VTD_IQH_REG			0x80
+#define VTD_IQT_REG			0x88
+#define VTD_GSTS_TES			(1U << 31)
+#define VTD_GSTS_QIES			(1U << 26)
+#define VTD_GSTS_IRES			(1U << 25)
+/* Drops one-shot bits when copying GSTS to GCMD */
+#define VTD_GCMD_ONESHOT_MASK		0x96ffffffU
+#define VTD_TIMEOUT_MS			1000
+
+#define ACPI_DMAR_SIGNATURE		"DMAR"
+#define ACPI_DMAR_TYPE_DRHD		0
+
+struct acpi_dmar
+{
+  struct grub_acpi_table_header hdr;
+  grub_uint8_t host_address_width;
+  grub_uint8_t flags;
+  grub_uint8_t reserved[10];
+} GRUB_PACKED;
+
+struct acpi_dmar_entry_header
+{
+  grub_uint16_t type;
+  grub_uint16_t length;
+} GRUB_PACKED;
+
+struct acpi_dmar_drhd
+{
+  struct acpi_dmar_entry_header hdr;
+  grub_uint8_t flags;
+  grub_uint8_t size;
+  grub_uint16_t segment;
+  grub_uint64_t base_address;
+} GRUB_PACKED;
 
 /* Area to collect and build TXT SLR Table information and policy entry */
 static struct grub_slr_entry_intel_info slr_intel_info_staging = {0};
@@ -246,6 +285,95 @@ grub_txt_prepare_cpu (void)
 	    return grub_error (GRUB_ERR_BAD_DEVICE,
 			       N_("secure launch MCG[%u] = %llx ERROR"), i, (unsigned long long)mcg_stat);
         }
+    }
+
+  return GRUB_ERR_NONE;
+}
+
+static grub_err_t
+vtd_clear_gsts_bit (grub_addr_t base, grub_uint32_t bit)
+{
+  grub_uint32_t gsts;
+  grub_uint64_t start;
+
+  gsts = grub_read32 (base + VTD_GSTS_REG);
+  if (!(gsts & bit))
+    return GRUB_ERR_NONE;
+
+  grub_write32 ((gsts & VTD_GCMD_ONESHOT_MASK) & ~bit, base + VTD_GCMD_REG);
+
+  start = grub_get_time_ms ();
+  while (grub_read32 (base + VTD_GSTS_REG) & bit)
+    {
+      if (grub_get_time_ms () - start > VTD_TIMEOUT_MS)
+        return GRUB_ERR_TIMEOUT;
+      asm volatile ("pause" : : : "memory");
+    }
+
+  return GRUB_ERR_NONE;
+}
+
+/* Let hardware finish pending invalidation requests before disabling QI. */
+static grub_err_t
+vtd_drain_invalidation_queue (grub_addr_t base)
+{
+  grub_uint64_t start;
+
+  if (!(grub_read32 (base + VTD_GSTS_REG) & VTD_GSTS_QIES))
+    return GRUB_ERR_NONE;
+
+  start = grub_get_time_ms ();
+  while (grub_read32 (base + VTD_IQH_REG) != grub_read32 (base + VTD_IQT_REG))
+    {
+      if (grub_get_time_ms () - start > VTD_TIMEOUT_MS)
+        return GRUB_ERR_TIMEOUT;
+      asm volatile ("pause" : : : "memory");
+    }
+
+  return GRUB_ERR_NONE;
+}
+
+/*
+ * SINIT fails if firmware left VT-d enabled, so turn it off like tboot does.
+ * Runs after ExitBootServices(), so it must not print.
+ */
+grub_err_t
+grub_txt_disable_vtd (void)
+{
+  struct acpi_dmar *dmar;
+  struct acpi_dmar_entry_header *entry;
+  grub_addr_t end, base;
+  grub_err_t err;
+
+  dmar = grub_acpi_find_table (ACPI_DMAR_SIGNATURE);
+  if (dmar == NULL)
+    return GRUB_ERR_NONE;
+
+  end = (grub_addr_t) dmar + dmar->hdr.length;
+
+  for (entry = (struct acpi_dmar_entry_header *) (dmar + 1);
+       (grub_addr_t) entry + sizeof (*entry) <= end && entry->length >= sizeof (*entry);
+       entry = (struct acpi_dmar_entry_header *) ((grub_addr_t) entry + entry->length))
+    {
+      if (entry->type != ACPI_DMAR_TYPE_DRHD ||
+          entry->length < sizeof (struct acpi_dmar_drhd))
+        continue;
+
+      base = ((struct acpi_dmar_drhd *) entry)->base_address;
+
+      /*
+       * Interrupt remapping relies on queued invalidation to flush the
+       * interrupt entry cache, so QI has to stay on until IR is disabled.
+       */
+      err = vtd_clear_gsts_bit (base, VTD_GSTS_TES);
+      if (err == GRUB_ERR_NONE)
+        err = vtd_clear_gsts_bit (base, VTD_GSTS_IRES);
+      if (err == GRUB_ERR_NONE)
+        err = vtd_drain_invalidation_queue (base);
+      if (err == GRUB_ERR_NONE)
+        err = vtd_clear_gsts_bit (base, VTD_GSTS_QIES);
+      if (err != GRUB_ERR_NONE)
+        return err;
     }
 
   return GRUB_ERR_NONE;

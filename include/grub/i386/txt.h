@@ -705,6 +705,7 @@ extern struct grub_txt_acm_header* grub_txt_sinit_select (struct grub_txt_acm_he
 
 extern grub_err_t grub_txt_verify_platform (void);
 extern grub_err_t grub_txt_prepare_cpu (void);
+extern grub_err_t grub_txt_disable_vtd (void);
 extern grub_err_t grub_set_mtrrs_for_acmod (struct grub_txt_acm_header *hdr);
 
 extern void grub_txt_init_tpm_event_log (void *buf, grub_size_t size);
