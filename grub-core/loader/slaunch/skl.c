@@ -191,7 +191,6 @@ grub_skl_setup_module (struct grub_slaunch_params *slparams)
     }
 
   grub_memcpy (v_addr, skl_module, skl_size);
-  skl_module = (struct grub_sl_header *) v_addr;
 
   /* Once relocated, setup the DCE info in slparams */
   slparams->dce_size = skl_size;
