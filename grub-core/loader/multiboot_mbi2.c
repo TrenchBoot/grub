@@ -775,6 +775,8 @@ grub_multiboot2_make_mbi (grub_uint32_t *target, grub_uint32_t *size)
     return err;
 
   ptrorig = get_virtual_current_address (ch);
+  /* Tag padding is measured on a Secure Launch, so it must not be stale. */
+  grub_memset (ptrorig, 0, bufsize);
 #if defined (__i386__) || defined (__x86_64__)
   *target = get_physical_target_address (ch);
 #elif defined (__mips)
