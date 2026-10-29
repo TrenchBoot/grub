@@ -36,6 +36,8 @@ static grub_uint32_t slp = SLP_NONE;
 
 static void *slaunch_module = NULL;
 
+static struct grub_preboot *preboot_hook = NULL;
+
 grub_uint32_t
 grub_slaunch_platform_type (void)
 {
@@ -184,6 +186,40 @@ grub_cmd_slaunch_module (grub_command_t cmd __attribute__ ((unused)),
   return grub_errno;
 }
 
+/*
+ * SKINIT runs the SKL, and the slaunch_module command keeps only an SKL that
+ * passes its checks. Without one, refuse the boot before the loader starts, so
+ * that GRUB returns to the menu. A loader that sets NORETURN never does a
+ * secure launch, and GRUB may have shut its console down before this hook.
+ */
+static grub_err_t
+grub_slaunch_preboot (int flags)
+{
+  if ((flags & GRUB_LOADER_FLAG_NORETURN) || slp != SLP_AMD_SKINIT
+      || slaunch_module != NULL)
+    return GRUB_ERR_NONE;
+
+  /*
+   * Unload the kernel, which was set up for a secure launch, and turn secure
+   * launch off, so that an entry without the slaunch command boots normally.
+   * An entry picked from the menu does not print an error from its boot, so
+   * print it here.
+   */
+  grub_loader_unset ();
+  slp = SLP_NONE;
+  grub_env_unset ("slaunch-legacy-linux");
+  grub_error (GRUB_ERR_BAD_ARGUMENT,
+	      N_("no valid SKL module loaded, secure launch turned off"));
+  grub_print_error ();
+  return GRUB_ERR_BAD_ARGUMENT;
+}
+
+static grub_err_t
+grub_slaunch_preboot_restore (void)
+{
+  return GRUB_ERR_NONE;
+}
+
 static grub_err_t
 grub_cmd_slaunch_state (grub_command_t cmd __attribute__ ((unused)),
 			int argc __attribute__ ((unused)),
@@ -215,10 +251,16 @@ GRUB_MOD_INIT (slaunch)
 					      NULL, N_("Load secure launcher module from file"));
   cmd_slaunch_state = grub_register_command ("slaunch_state", grub_cmd_slaunch_state,
 					     NULL, N_("Display secure launcher state"));
+  preboot_hook = grub_loader_register_preboot_hook (grub_slaunch_preboot,
+						    grub_slaunch_preboot_restore,
+						    GRUB_LOADER_PREBOOT_HOOK_PRIO_NORMAL);
 }
 
 GRUB_MOD_FINI (slaunch)
 {
+  if (preboot_hook)
+    grub_loader_unregister_preboot_hook (preboot_hook);
+
   if (cmd_slaunch_state)
     grub_unregister_command (cmd_slaunch_state);
 

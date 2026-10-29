@@ -149,6 +149,9 @@ grub_skl_setup_module (struct grub_slaunch_params *slparams)
   grub_addr_t max_addr;
 #endif
 
+  if (skl_module == NULL)
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("no valid SKL module loaded"));
+
   if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX || slparams->boot_type == GRUB_SL_BOOT_TYPE_MB2)
     {
       err = grub_relocator_alloc_chunk_align (slparams->relocator, &ch,
