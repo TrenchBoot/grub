@@ -33,6 +33,10 @@
 #include <grub/i386/txt.h>
 #include <grub/i386/skinit.h>
 
+#ifdef GRUB_MACHINE_EFI
+#include <grub/efi/efi.h>
+#endif
+
 GRUB_MOD_LICENSE ("GPLv3+");
 
 extern void dl_trampoline(grub_uint32_t dce_base, grub_uint32_t dce_size, grub_uint32_t platform);
@@ -43,6 +47,15 @@ void dl_entry (grub_uint64_t dl_ctx)
   struct grub_slaunch_params *slparams = (struct grub_slaunch_params *)(grub_addr_t)bl_ctx->context;
   struct grub_relocator32_state state = {0};
   grub_err_t err;
+
+#ifdef GRUB_MACHINE_EFI
+  /*
+   * On the EFI boot path the OS calls here after it has exited the boot
+   * services, so the EFI console and memory services must not be used.
+   */
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
+    grub_efi_is_finished = 1;
+#endif
 
   state.edi = slparams->platform_type;
 
@@ -56,14 +69,14 @@ void dl_entry (grub_uint64_t dl_ctx)
       if (err)
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("setting MTRRs for TXT SINIT failed"));
-          return;
+          goto fail;
         }
 
       err = grub_txt_prepare_cpu ();
       if ( err )
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("prepare CPU for TXT SENTER failed"));
-          return;
+          goto fail;
         }
 
       err = grub_txt_disable_vtd ();
@@ -84,17 +97,21 @@ void dl_entry (grub_uint64_t dl_ctx)
           if (err != GRUB_ERR_NONE)
             {
               grub_error (GRUB_ERR_BAD_DEVICE, N_("setup PSP TMR memory protection failed"));
-              return;
+              goto fail;
             }
         }
       else
-        grub_tpm_relinquish_locality (0);
+        {
+          grub_dprintf ("slaunch", "launching without a PSP: %s", grub_errmsg);
+          grub_errno = GRUB_ERR_NONE;
+          grub_tpm_relinquish_locality (0);
+        }
 
       err = grub_skinit_prepare_cpu ();
       if ( err )
         {
           grub_error (GRUB_ERR_BAD_DEVICE, N_("setup CPU for SKINIT failed"));
-          return;
+          goto fail;
         }
 
       /* Have to do this after EBS or things blow up */
@@ -103,13 +120,13 @@ void dl_entry (grub_uint64_t dl_ctx)
   else
     {
       grub_error (GRUB_ERR_BUG, N_("unknown dynamic launch platform: %d"), slparams->platform_type);
-      return;
+      goto fail;
     }
 
   if (!(grub_rdmsr (GRUB_MSR_X86_APICBASE) & GRUB_MSR_X86_APICBASE_BSP))
     {
       grub_error (GRUB_ERR_BAD_DEVICE, N_("x86 dynamic launch event must be performed on the BSP"));
-      return;
+      goto fail;
     }
 
   if (slparams->boot_type == GRUB_SL_BOOT_TYPE_LINUX || slparams->boot_type == GRUB_SL_BOOT_TYPE_MB2)
@@ -137,4 +154,9 @@ void dl_entry (grub_uint64_t dl_ctx)
     {
       grub_error (GRUB_ERR_BUG, N_("unknown dynamic launch boot type: %d"), slparams->boot_type);
     }
+
+ fail:
+  /* The OS calling here on the EFI path has no way to report the error. */
+  if (slparams->boot_type == GRUB_SL_BOOT_TYPE_EFI)
+    grub_print_error ();
 }

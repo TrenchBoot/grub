@@ -289,11 +289,11 @@ grub_multiboot2_load (grub_file_t file, const char *filename)
 			 "load address tag without entry address tag");
     }
 
-  if (grub_slaunch_platform_type () != SLP_NONE)
+  slparams->platform_type = grub_slaunch_platform_type ();
+  if (slparams->platform_type != SLP_NONE)
     {
       slparams->relocator = grub_multiboot2_relocator;
       slparams->boot_type = GRUB_SL_BOOT_TYPE_MB2;
-      slparams->platform_type = grub_slaunch_platform_type ();
     }
 
   if (addr_tag)
