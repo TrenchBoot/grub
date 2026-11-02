@@ -106,6 +106,11 @@ void dl_entry (grub_uint64_t dl_ctx)
               goto fail;
             }
         }
+      else
+        {
+          grub_dprintf ("slaunch", "launching without a PSP: %s", grub_errmsg);
+          grub_errno = GRUB_ERR_NONE;
+        }
 
       err = grub_skinit_prepare_cpu ();
       if ( err )
